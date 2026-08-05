@@ -1,0 +1,173 @@
+# ============================================
+# AI模拟面试平台 - 应用配置
+# ============================================
+
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+
+server:
+  port: 8080
+
+# ============================================
+# SpringDoc / Swagger 接口文档配置
+# 访问地址：http://localhost:8080/swagger-ui.html
+# OpenAPI JSON：http://localhost:8080/v3/api-docs
+# ============================================
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  packages-to-scan: com.aiinterview.controller
+
+spring:
+  application:
+    name: ai-interview
+
+  # 虚拟线程（Java 21）
+  threads:
+    virtual:
+      enabled: true
+
+  # ============================================
+  # PostgreSQL + pgvector 数据库配置
+  # 容器：postgres-service (port 5432)
+  # 新建 ai_interview 库，与旧项目 interview_guide 隔离
+  # ============================================
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ai_interview
+    username: postgres
+    password: 123456
+    driver-class-name: org.postgresql.Driver
+
+  # 编码 & 文件上传（Spring Boot 4.x 用 spring.servlet.encoding，不再用 server.servlet.encoding）
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+    multipart:
+      enabled: true
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  # ============================================
+  # Redis 配置（Spring Data Redis）
+  # 容器：my_redis (port 6380)
+  # 使用 1 号库，与旧项目（0号库）隔离
+  # ============================================
+  data:
+    redis:
+      host: localhost
+      port: 6380
+      password: 123456
+      database: 1
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+          max-wait: 3000ms
+
+  # ============================================
+  # Spring AI 配置（OpenAI兼容模式 → 通义千问）
+  # 自动配置需要 spring.ai.openai.api-key，给占位值即可
+  # 实际使用 app.ai.llm.* 中的配置（见 LlmConfig）
+  # ============================================
+  ai:
+    openai:
+      api-key: unused                          # 占位，实际由 LlmConfig 管理
+    retry:
+      max-attempts: 1
+      on-client-errors: false
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
+        initialize-schema: true
+        remove-existing-vector-store-table: false
+
+# ============================================
+# 业务自定义配置
+# ============================================
+app:
+  # ---------- AI/LLM 配置 ----------
+  ai:
+    # 使用单个LLM，OpenAI兼容接口
+    llm:
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: "sk-828bed09df0d4d70b2ac85c24b37892a"   # <-- 填写你的API Key
+      model: qwen3.5-flash
+      embedding-model: text-embedding-v3
+      embedding-dimensions: 1024
+
+    # ---------- Prompt 注入防护配置 ----------
+    defense:
+      sanitizer:
+        enabled: true                           # 第一层：正则净化开关
+      delimiter:
+        enabled: true                           # 第二层：动态分隔符开关
+      output-guard:
+        enabled: true                           # 第三层：输出护栏开关（模式从 defense/output-guard-patterns.json 加载）
+
+    # 结构化输出重试
+    structured-max-attempts: 2
+    structured-include-last-error: true
+    structured-retry-use-repair-prompt: true
+    structured-retry-append-strict-json-instruction: true
+    structured-error-message-max-length: 200
+
+    # RAG 检索配置
+    rag:
+      rewrite:
+        enabled: true                         # Query Rewrite：用LLM改写用户问题提升检索命中率
+      search:
+        short-query-length: 4                 # 短查询阈值（≤4字视为短查询）
+        long-query-length: 16                 # 长查询阈值（≥16字视为长查询，中间为中等查询）
+        topk-short: 20                        # 短查询返回片段数（关键词少，需要更多候选）
+        topk-medium: 12                       # 中等查询返回片段数
+        topk-long: 8                          # 长查询返回片段数（语义丰富，精确匹配为主）
+        min-score-short: 0.18                 # 短查询最低相似度（阈值更低，放宽匹配）
+        min-score-default: 0.28               # 默认最低相似度
+
+  # ---------- 面试配置 ----------
+  interview:
+    follow-up-count: 1
+    evaluation:
+      batch-size: 4                           # 分批评估，每批4题，避免超出LLM输出限制
+
+  # ---------- 简历配置 ----------
+  resume:
+    upload-dir: ${java.io.tmpdir}/ai-interview/resumes
+    allowed-types:
+      - application/pdf
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - text/plain
+
+  # ============================================
+  # 阿里云 OSS 对象存储配置
+  # （AWS S3 SDK S3兼容模式）
+  # 开发阶段可保持 enabled: false，不影响应用启动
+  # 配置好 AccessKey 后将 enabled 改为 true
+  # ============================================
+  storage:
+    enabled: true                                   # <-- 配置好凭证后改为 true
+    endpoint: https://oss-cn-beijing.aliyuncs.com      # <-- 改为你的 OSS endpoint
+    access-key: "LTAI5t5dFiwnqcoR6sGANmak"             # <-- 填写 AccessKey ID
+    secret-key: "D70OsfrYhJCSZQyJKO95VydMtp6Zj2"       # <-- 填写 AccessKey Secret
+    bucket: ai-interview-101                        # <-- 改为你的 Bucket 名称
+    region: oss-cn-beijing                             # <-- 改为你的 OSS 地域    
+
+  # ---------- CORS 配置（前端地址） ----------
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:80
+
+  # ---------- 虚拟线程 ----------
+  virtual-thread:
+    enabled: true
