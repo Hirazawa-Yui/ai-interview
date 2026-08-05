@@ -252,13 +252,14 @@ LLM 输出后检测"投降语"（`I'll now act as`、`我已经忽略`、`新的
 - KnowledgeBaseController（7端点）
 - 验证：编译 + 上传测试
 
-**5b：RAG问答 + 会话 + 前端（后做，~10文件）**
-- DTO: KbQueryRequest, KbQueryResponse, 会话/消息DTO
-- IKbQueryService: Query Rewrite + 动态topK + RAG Prompt + SSE流式 + 120字探测窗口
-- IRagChatService: 会话CRUD + 消息管理 + 多轮对话
-- RagChatController（4端点）
-- 验证：编译 + SSE流式测试
-- 前端: KnowledgePage.vue
+**5b：RAG问答 + 会话 + 前端（~10文件）**
+
+- DTO: KbQueryRequest, KbQueryResponse, 会话/消息DTO（4个）
+- IKbQueryService + impl: Query Rewrite → 动态topK → 向量检索 → RAG Prompt → SSE流式 + 120字探测窗口
+- IRagChatService + impl: 会话CRUD + 多轮消息管理 + 历史拼接(最近10条)
+- RagChatController: 6端点（SSE单次问答 + SSE多轮对话 + 会话CRUD）
+- 前端: KnowledgePage.vue（分片上传 + 文档列表 + RAG问答面板）
+- 验证：编译 + curl测试SSE流式 + 前端联调
 
 ### Phase 6：模拟面试
 - 创建会话 → AI按技能方向出题 → 缓存到Redis → 用户逐题作答 → 最后异步评估

@@ -30,6 +30,7 @@ public class ResumeController {
     @PostMapping("/upload")
     public Result<ResumeUploadResponse> upload(
             @Parameter(description = "简历文件") @RequestParam("file") MultipartFile file) {
+        log.info("简历上传: fileName={}, size={}", file.getOriginalFilename(), file.getSize());
         ResumeUploadResponse result = resumeService.upload(file);
         return Result.ok(result);
     }
@@ -37,6 +38,7 @@ public class ResumeController {
     @Operation(summary = "简历列表", description = "获取所有简历，含最新分析评分")
     @GetMapping
     public Result<List<Map<String, Object>>> list() {
+        log.info("简历列表");
         return Result.ok(resumeService.list());
     }
 
@@ -44,6 +46,7 @@ public class ResumeController {
     @GetMapping("/{id}/detail")
     public Result<Map<String, Object>> detail(
             @Parameter(description = "简历ID") @PathVariable Long id) {
+        log.info("简历详情: id={}", id);
         return Result.ok(resumeService.detail(id));
     }
 
@@ -51,6 +54,7 @@ public class ResumeController {
     @DeleteMapping("/{id}")
     public Result<String> delete(
             @Parameter(description = "简历ID") @PathVariable Long id) {
+        log.info("简历删除: id={}", id);
         resumeService.delete(id);
         return Result.ok("删除成功");
     }
@@ -59,6 +63,7 @@ public class ResumeController {
     @PostMapping("/{id}/reanalyze")
     public Result<String> reanalyze(
             @Parameter(description = "简历ID") @PathVariable Long id) {
+        log.info("简历重分析: id={}", id);
         resumeService.reanalyze(id);
         return Result.ok("已触发重新分析");
     }

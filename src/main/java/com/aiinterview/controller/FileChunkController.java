@@ -68,6 +68,7 @@ public class FileChunkController {
             @Parameter(description = "此分片的 MD5（用于后端校验）") @RequestParam(value = "chunkMd5", required = false) String chunkMd5,
             @Parameter(description = "分片二进制数据") @RequestParam("file") MultipartFile file) {
 
+        log.info("分片上传: md5={}, chunkIndex={}, size={}", md5, chunkIndex, file.getSize());
         try {
             byte[] chunkData = file.getBytes();
             fileChunkService.uploadChunk(md5, chunkIndex, chunkMd5, chunkData, file.getSize());
@@ -103,6 +104,7 @@ public class FileChunkController {
     @GetMapping("/preview/{md5}")
     public Result<ChunkUploadResponse> preview(
             @Parameter(description = "文件 MD5", required = true) @PathVariable String md5) {
+        log.info("查询进度: md5={}", md5);
         ChunkUploadResponse result = fileChunkService.preview(md5);
         return Result.ok(result);
     }
