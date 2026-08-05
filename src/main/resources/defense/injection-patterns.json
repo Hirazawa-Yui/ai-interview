@@ -1,0 +1,32 @@
+[
+  {
+    "name": "role-marker",
+    "pattern": "(?im)^\\s*(system|user|assistant|human|ai|model)\\s*[:：].*",
+    "replacement": "[filtered-role-marker]",
+    "description": "行首角色标记注入 — 匹配以 System/User/Assistant 等开头的行，只匹配行首避免误杀"
+  },
+  {
+    "name": "instruction-override-en",
+    "pattern": "(ignore\\s+(previous|above|all|your)[\\s\\w]*(instructions|prompts|rules))|(forget\\s+(everything|all\\s*(previous\\s*)?(instructions|rules|prompts)))|(new\\s+instructions?:)",
+    "replacement": "[filtered]",
+    "description": "指令覆盖短语（英文）— 匹配完整句式，ignore exception 不会被误杀"
+  },
+  {
+    "name": "instruction-override-cn",
+    "pattern": "忽略之前的指令|忘记之前的指令|忽略以上所有|你不再是|你的新角色是",
+    "replacement": "[filtered]",
+    "description": "指令覆盖短语（中文）"
+  },
+  {
+    "name": "delimiter-injection",
+    "pattern": "---(?:简历|文档|问答)内容(?:开始|结束)---",
+    "replacement": "[filtered-delimiter]",
+    "description": "分隔符伪造 — 匹配模板中使用的 ---XXX内容开始--- 标记"
+  },
+  {
+    "name": "boundary-tag",
+    "pattern": "</?data-boundary[^>]*>",
+    "replacement": "[filtered-boundary-tag]",
+    "description": "动态标签伪造 — 攻击者尝试构造 <data-boundary> 提前闭合包裹"
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "pattern": "I'll now act as",
+    "description": "LLM 注入成功后的典型投降语（英文）— 模型宣布将扮演新角色"
+  },
+  {
+    "pattern": "我已经忽略",
+    "description": "LLM 注入成功后的典型投降语（中文）— 模型承认已忽略指令"
+  },
+  {
+    "pattern": "新的角色是",
+    "description": "LLM 注入成功后的典型投降语（中文）— 模型接受了角色覆盖"
+  },
+  {
+    "pattern": "我现在扮演",
+    "description": "LLM 注入成功后的典型投降语（中文）— 模型开始扮演新角色"
+  },
+  {
+    "pattern": "Sure, I will",
+    "description": "LLM 注入成功后的典型投降语（英文）— 模型无条件同意"
+  },
+  {
+    "pattern": "Here is the new",
+    "description": "LLM 注入成功后的典型投降语（英文）— 模型提供了越狱后的新输出"
+  }
+]
