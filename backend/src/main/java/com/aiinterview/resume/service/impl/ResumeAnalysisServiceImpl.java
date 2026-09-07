@@ -72,10 +72,10 @@ public class ResumeAnalysisServiceImpl implements IResumeAnalysisService {
         // 6. Phase3 输出护栏
         defenseService.guardOutput(llmResponse);
 
-        // 7. 解析 JSON → ResumeAnalysisResponse
+        // 7. 解析 JSON → ResumeAnalysisResponse（先剥离可能出现的 json 围栏）
         try {
             log.info("AI 简历分析成功");
-            return converter.convert(llmResponse);
+            return converter.convert(defenseService.stripJsonFence(llmResponse));
         } catch (Exception e) {
             log.error("解析 AI 分析结果失败: {}", e.getMessage());
             log.debug("LLM 原始返回: {}", llmResponse);

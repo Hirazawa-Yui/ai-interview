@@ -37,6 +37,7 @@ class PromptDefenseTest {
 
         sanitizer = new PromptSanitizer(patternLoader);
         setField(sanitizer, "sanitizerEnabled", true);
+        setField(sanitizer, "delimiterEnabled", true);
 
         guardConfig = new OutputGuardConfig();
         guardConfig.setEnabled(true);
@@ -254,5 +255,51 @@ class PromptDefenseTest {
         assertFalse(instruction.isBlank());
         assertTrue(instruction.contains("data-boundary"));
         assertTrue(instruction.contains("数据"));
+    }
+
+    // ============================================================
+    // json 围栏剥离（B1，解析前的防御处理）
+    // ============================================================
+
+    @Test
+    @DisplayName("剥离 ```json 围栏并保留内文")
+    void shouldStripJsonFenceWithLangTag() {
+        String response = "```json\n{\"overallScore\": 85}\n```";
+        assertEquals("{\"overallScore\": 85}", defenseService.stripJsonFence(response));
+    }
+
+    @Test
+    @DisplayName("剥离无语言标记的 ``` 围栏")
+    void shouldStripPlainFence() {
+        String response = "```\n{\"overallScore\": 85}\n```";
+        assertEquals("{\"overallScore\": 85}", defenseService.stripJsonFence(response));
+    }
+
+    @Test
+    @DisplayName("无围栏时原样返回")
+    void shouldReturnAsIsWithoutFence() {
+        String response = "{\"overallScore\": 85}";
+        assertSame(response, defenseService.stripJsonFence(response));
+    }
+
+    @Test
+    @DisplayName("围栏内为空白时原样返回（不制造空解析输入）")
+    void shouldReturnAsIsWhenFenceEmpty() {
+        String response = "```json\n   \n```";
+        assertSame(response, defenseService.stripJsonFence(response));
+    }
+
+    @Test
+    @DisplayName("围栏前有说明文字时仍提取首个围栏块")
+    void shouldExtractFenceWithLeadingText() {
+        String response = "好的，以下是评估结果：\n```json\n{\"overallScore\": 88}\n```\n希望对你有帮助";
+        assertEquals("{\"overallScore\": 88}", defenseService.stripJsonFence(response));
+    }
+
+    @Test
+    @DisplayName("null 与空字符串安全返回")
+    void shouldHandleNullAndBlank() {
+        assertNull(defenseService.stripJsonFence(null));
+        assertEquals("  ", defenseService.stripJsonFence("  "));
     }
 }

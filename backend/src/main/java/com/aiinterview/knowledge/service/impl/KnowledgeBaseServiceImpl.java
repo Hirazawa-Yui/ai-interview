@@ -8,6 +8,7 @@ import com.aiinterview.common.ErrorCode;
 import com.aiinterview.knowledge.mapper.KnowledgeBaseMapper;
 import com.aiinterview.file.service.IFileStorageService;
 import com.aiinterview.knowledge.service.IKnowledgeBaseService;
+import com.aiinterview.knowledge.service.IKbVectorService;
 import com.aiinterview.knowledge.listener.VectorizeProducer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
     private final KnowledgeBaseMapper kbMapper;
     private final IFileStorageService storageService;
     private final VectorizeProducer vectorizeProducer;
+    private final IKbVectorService vectorService;
 
     @Override
     @Transactional
@@ -125,6 +127,8 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
         if (kb == null) throw new BusinessException(ErrorCode.KNOWLEDGE_BASE_NOT_FOUND);
         try { storageService.deleteFile(kb.getStorageKey()); } catch (Exception e) { log.warn("删OSS失败", e); }
         kbMapper.deleteById(id);
+        // 同步清理 pgvector（同库同事务，与行删除原子提交）
+        vectorService.deleteByKbId(id);
         log.info("知识库删除: id={}", id);
     }
 

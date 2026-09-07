@@ -32,6 +32,17 @@ public interface IPromptDefenseService {
     void guardOutput(String llmResponse);
 
     /**
+     * 防御性 json 围栏剥离：LLM 偶发用 ```json 代码块包裹 JSON 返回，解析前剥离围栏取内文。
+     * 命中围栏且内文非空 → 返回内文；否则原样返回（不修其他畸形，留给解析层报错）。
+     * <p>
+     * 规范约定：所有 LLM 输出在结构化解析前必须经此方法处理。
+     *
+     * @param llmResponse LLM 返回的文本
+     * @return 剥离围栏后的文本（null/空原样返回）
+     */
+    String stripJsonFence(String llmResponse);
+
+    /**
      * 仅第一层：正则净化
      *
      * @param text 用户输入文本

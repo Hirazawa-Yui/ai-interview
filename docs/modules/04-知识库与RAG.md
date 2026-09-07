@@ -61,7 +61,7 @@
 ## 6. 已知坑位
 - **前端 XSS**：AI 回复经 `marked` 渲染后直接 `v-html`，无 DOMPurify 消毒（AI 输出不可控场景有注入风险）。
 - **前端裸 fetch**：RAG/会话 5 个接口散在 KnowledgePage.vue 内，不走 axios 拦截器（无统一错误提示）。
-- 删除知识库只删 OSS + 表行，**vector_store 里的向量用 JdbcTemplate 在 revectorize 时删**——delete() 本身不清理向量（脏数据，但不参与检索因 kb_id 过滤…实为残留）。`deleteByKbId` 只在 vectorize 前调用。
+- ~~删除知识库不删向量~~：✅ 已修（B4，2026-09-08）——`delete()` 现同步调 `vectorService.deleteByKbId(id)` 清理 vector_store（同库同事务原子）；实测删 kb → vector_store 零残留。`deleteByKbId` 吞异常 warn 语义保留（best-effort）。
 - kb_ids 以 JSON 字符串存储，`parseKbIds` 失败返回空列表（静默）。
 - 会话历史消息 `LIMIT 11` 取 11 条过滤当前 user 消息后取 10 条——对消息数边界敏感，改动需小心。
 

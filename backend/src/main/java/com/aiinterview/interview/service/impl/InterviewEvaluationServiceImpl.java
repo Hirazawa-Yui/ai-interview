@@ -378,10 +378,10 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
         // 6. Phase3 输出护栏
         defenseService.guardOutput(llmResponse);
 
-        // 7. 解析 JSON
+        // 7. 解析 JSON（先剥离可能出现的 json 围栏）
         try {
             log.info("单批评估完成: {}题", qaList.size());
-            return converter.convert(llmResponse);
+            return converter.convert(defenseService.stripJsonFence(llmResponse));
         } catch (Exception e) {
             log.error("解析评估结果失败: {}", e.getMessage());
             log.debug("LLM原始返回: {}", llmResponse);
@@ -428,7 +428,8 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
         defenseService.guardOutput(llmResponse);
 
         try {
-            InterviewEvaluationResponse summary = converter.convert(llmResponse);
+            // 先剥离可能出现的 json 围栏，再解析
+            InterviewEvaluationResponse summary = converter.convert(defenseService.stripJsonFence(llmResponse));
             // perQuestion 从各批次拼接
             List<InterviewEvaluationResponse.QuestionEvaluation> allPerQuestion = new ArrayList<>();
             for (String batchJson : batchResults) {

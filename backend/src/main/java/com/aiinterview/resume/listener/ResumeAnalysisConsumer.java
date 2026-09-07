@@ -97,7 +97,7 @@ public class ResumeAnalysisConsumer extends AbstractStreamConsumer<ResumeAnalysi
                     .summary(aiResult.getSummary())
                     .strengthsJson(objectMapper.writeValueAsString(aiResult.getStrengths()))
                     .suggestionsJson(objectMapper.writeValueAsString(aiResult.getSuggestions()))
-                    .aiRawResponse("")  // 简化：不存原始返回
+                    .aiRawResponse(objectMapper.writeValueAsString(aiResult))  // 调试抓手（与面试评估侧 toJson 对称）
                     .analyzedAt(LocalDateTime.now())
                     .build();
             analysisMapper.insert(analysis);

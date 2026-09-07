@@ -19,7 +19,6 @@ import com.aiinterview.interview.listener.InterviewEvaluationProducer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,6 +28,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -144,10 +145,10 @@ public class InterviewServiceImpl implements IInterviewService {
         // 6. Phase3 输出护栏
         defenseService.guardOutput(llmResponse);
 
-        // 7. 解析 JSON 数组 → List<InterviewQuestionDTO>
+        // 7. 解析 JSON 数组 → List<InterviewQuestionDTO>（先剥离可能出现的 json 围栏）
         List<InterviewQuestionDTO> questions;
         try {
-            questions = parseQuestionList(llmResponse);
+            questions = parseQuestionList(defenseService.stripJsonFence(llmResponse));
         } catch (Exception e) {
             log.error("解析AI出题结果失败: {}", e.getMessage());
             log.debug("LLM原始返回: {}", llmResponse);
@@ -159,6 +160,9 @@ public class InterviewServiceImpl implements IInterviewService {
             throw new BusinessException(ErrorCode.INTERVIEW_QUESTION_GENERATION_FAILED,
                     "AI 未生成任何题目");
         }
+
+        // 题号归一化：LLM 偶发跳号/乱序，按数组顺序重写 1..N，保证"数组下标=题号-1"连续性假设成立
+        renumberQuestions(questions);
 
         // 8. 入库
         String questionsJson;
@@ -202,7 +206,13 @@ public class InterviewServiceImpl implements IInterviewService {
     // 提交回答
     // ============================================================
 
+    /**
+     * 提交回答。DB 多步写入事务化（answer 入库 + 进度更新 + 答完置 COMPLETED 原子）；
+     * 增量评估消息经事务提交后回调发出——否则消费者可能在事务提交前读到未提交的 answer
+     * 而静默丢批次（跨模块坑 #8 同型，修复见 B3）。
+     */
     @Override
+    @Transactional
     public Map<String, Object> submitAnswer(Long sessionId, Integer questionNumber,
                                             String answerText) {
         return doSubmitAnswer(sessionId, questionNumber, answerText);
@@ -260,8 +270,9 @@ public class InterviewServiceImpl implements IInterviewService {
         session.setUpdatedAt(LocalDateTime.now());
         sessionMapper.updateById(session);
 
-        // 7. 增量评估：每攒够 batchSize 题或最后一题，触发异步评估批次
-        tryTriggerIncrementalEvaluation(session, questions.size());
+        // 7. 增量评估：每攒够 batchSize 题或最后一题，事务提交后触发异步评估批次
+        //    （afterCommit 保证消费者读到的 answer/进度必为已提交数据，见坑 #8）
+        registerAfterCommit(() -> triggerIncrementalEvaluationAfterCommit(sessionId));
 
         // 8. 判断是否答完
         if (questionNumber >= questions.size()) {
@@ -514,9 +525,58 @@ public class InterviewServiceImpl implements IInterviewService {
         }
     }
 
-    /** 增量评估触发：每攒够 batchSize 题或最后一题，发送异步评估批次 */
-    private void tryTriggerIncrementalEvaluation(InterviewSession session, int totalQuestions) {
+    /** 题号归一化：LLM 偶发跳号/乱序/非 1 起始，按数组顺序重写 questionNumber=1..N */
+    private void renumberQuestions(List<InterviewQuestionDTO> questions) {
+        if (questions == null || questions.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < questions.size(); i++) {
+            int expected = i + 1;
+            if (questions.get(i).getQuestionNumber() != expected) {
+                if (i == 0) {
+                    log.info("AI 出题题号非连续/乱序，归一化为 1..{}", questions.size());
+                }
+                questions.get(i).setQuestionNumber(expected);
+            }
+        }
+    }
+
+    /** 注册事务提交后回调（提交后消费者读到的必是已提交数据） */
+    private void registerAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        action.run();
+                    } catch (Exception e) {
+                        // 提交已发生无法回滚，只记录（触发失败会由汇总降级/恢复Runner兜底）
+                        log.error("事务提交后回调执行失败", e);
+                    }
+                }
+            });
+        } else {
+            // 无事务上下文时直接执行（当前 submitAnswer 恒在事务内，防御分支）
+            action.run();
+        }
+    }
+
+    /**
+     * 增量评估触发（事务提交后执行）：重新读取已提交的会话进度，
+     * 每攒够 batchSize 题或最后一题则发送异步评估批次到 Stream
+     */
+    private void triggerIncrementalEvaluationAfterCommit(Long sessionId) {
+        InterviewSession session = sessionMapper.selectById(sessionId);
+        if (session == null) {
+            return;
+        }
+        String status = session.getStatus();
+        if (!"IN_PROGRESS".equals(status) && !"COMPLETED".equals(status)) {
+            return; // 会话已结束或异常，不再触发增量批次
+        }
         int currentQ = session.getCurrentQuestion();
+        List<InterviewQuestionDTO> questions = loadQuestionsFromCache(session);
+        int totalQuestions = questions.size();
         int batchSize = this.evaluationBatchSize;
 
         // 条件1：每攒够 batchSize 题，或这是最后一题

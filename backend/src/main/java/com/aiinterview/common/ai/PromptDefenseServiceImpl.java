@@ -94,4 +94,28 @@ public class PromptDefenseServiceImpl implements IPromptDefenseService {
             }
         }
     }
+
+    // ============================================================
+    // json 围栏剥离（解析前的防御处理）
+    // ============================================================
+
+    /** ```json ... ``` 围栏（语言标记可选）；非贪婪取首个围栏块 */
+    private static final java.util.regex.Pattern JSON_FENCE =
+            java.util.regex.Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)```", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    @Override
+    public String stripJsonFence(String llmResponse) {
+        if (llmResponse == null || llmResponse.isBlank()) {
+            return llmResponse;
+        }
+        var m = JSON_FENCE.matcher(llmResponse);
+        if (m.find()) {
+            String inner = m.group(1).trim();
+            if (!inner.isEmpty()) {
+                log.debug("剥离 json 围栏: 原始长度 {} → {}", llmResponse.length(), inner.length());
+                return inner;
+            }
+        }
+        return llmResponse;
+    }
 }

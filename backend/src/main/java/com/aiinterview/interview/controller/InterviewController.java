@@ -73,9 +73,9 @@ public class InterviewController {
         return Result.ok(interviewService.submitAnswer(id, req.getQuestionNumber(), req.getAnswerText()));
     }
 
-    // ==================== Phase 6b 端点（待实现） ====================
+    // ==================== 评估端点 ====================
 
-    @Operation(summary = "提交评估", description = "触发异步评估（Phase 6b实现）")
+    @Operation(summary = "提交评估", description = "触发异步评估（Stream 汇总，见模块 05）")
     @PostMapping("/api/interviews/sessions/{id}/evaluate")
     public Result<Map<String, Object>> evaluate(
             @Parameter(description = "会话ID") @PathVariable Long id) {
@@ -83,7 +83,7 @@ public class InterviewController {
         return Result.ok(interviewService.triggerEvaluation(id));
     }
 
-    @Operation(summary = "获取评估结果", description = "轮询评估结果（Phase 6b实现）")
+    @Operation(summary = "获取评估结果", description = "轮询评估结果（EVALUATING→EVALUATED/FAILED）")
     @GetMapping("/api/interviews/sessions/{id}/evaluation")
     public Result<Map<String, Object>> getEvaluation(
             @Parameter(description = "会话ID") @PathVariable Long id) {
