@@ -1,6 +1,9 @@
 package com.aiinterview.file.service;
 
+import com.aiinterview.file.dto.MultipartUploadInfo;
+
 import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -84,6 +87,22 @@ public interface IFileStorageService {
      * @param partETags 各分片的 eTag 映射（partNumber → eTag）
      */
     void completeMultipartUpload(String key, String uploadId, Map<Integer, String> partETags);
+
+    /**
+     * 列出指定前缀下所有未完成的分片上传（孤儿清理用，D1）
+     *
+     * @param prefix 对象前缀（如 "files/"）；null 则列出全部
+     * @return 未完成上传列表（不含已 Complete/Abort 的）
+     */
+    List<MultipartUploadInfo> listMultipartUploads(String prefix);
+
+    /**
+     * 中止未完成的分片上传（释放 OSS 上的孤儿分片占位）
+     *
+     * @param key      对象路径
+     * @param uploadId 上传会话 ID
+     */
+    void abortMultipartUpload(String key, String uploadId);
 
     /**
      * 获取文件大小（字节）

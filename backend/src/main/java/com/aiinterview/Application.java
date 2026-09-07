@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * AI模拟面试平台 - 主启动类
@@ -15,6 +16,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * exclude: 排除 Spring AI 音频/图片自动配置（本项目不做语音面试，不需要 TTS/STT）
  */
 @EnableAsync
+@EnableScheduling
 @EnableAspectJAutoProxy(exposeProxy = true)
 @MapperScan({
         "com.aiinterview.file.mapper",

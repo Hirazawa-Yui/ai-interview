@@ -3,6 +3,7 @@ package com.aiinterview.file.service.impl;
 import com.aiinterview.config.StorageProperties;
 import com.aiinterview.common.BusinessException;
 import com.aiinterview.common.ErrorCode;
+import com.aiinterview.file.dto.MultipartUploadInfo;
 import com.aiinterview.file.service.IFileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -187,5 +189,32 @@ public class FileStorageServiceImpl implements IFileStorageService {
 
         s3Client.completeMultipartUpload(request);
         log.info("分片合并完成: key={}, uploadId={}, totalParts={}", key, uploadId, completedParts.size());
+    }
+
+    /**
+     * 列出未完成的分片上传（OSS 可能分页，这里循环取全量；单机自用场景量小）
+     */
+    @Override
+    public List<MultipartUploadInfo> listMultipartUploads(String prefix) {
+        var builder = ListMultipartUploadsRequest.builder()
+                .bucket(storageConfig.getBucket());
+        if (prefix != null) {
+            builder.prefix(prefix);
+        }
+        var result = s3Client.listMultipartUploads(builder.build());
+        return result.uploads().stream()
+                .map(u -> new MultipartUploadInfo(u.key(), u.uploadId(), u.initiated()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void abortMultipartUpload(String key, String uploadId) {
+        AbortMultipartUploadRequest request = AbortMultipartUploadRequest.builder()
+                .bucket(storageConfig.getBucket())
+                .key(key)
+                .uploadId(uploadId)
+                .build();
+        s3Client.abortMultipartUpload(request);
+        log.info("孤儿分片上传已中止: key={}, uploadId={}", key, uploadId);
     }
 }

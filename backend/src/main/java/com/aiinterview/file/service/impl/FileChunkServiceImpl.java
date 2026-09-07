@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.aiinterview.common.RedisKeys;
 import com.aiinterview.file.dto.ChunkUploadResponse;
+import com.aiinterview.file.dto.MultipartUploadInfo;
 import com.aiinterview.file.entity.FileInfo;
 import com.aiinterview.common.BusinessException;
 import com.aiinterview.common.ErrorCode;
@@ -15,9 +16,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -306,6 +309,49 @@ public class FileChunkServiceImpl implements IFileChunkService {
                 .totalChunks(totalChunks)
                 .uploadedChunks(uploadedChunks)
                 .build();
+    }
+
+    // ============================================================
+    // 孤儿分片清理（D1）
+    // ============================================================
+
+    /** 孤儿判定阈值：OSS 上传发起超过该时长且未完成 → 视为孤儿（Redis 会话 TTL 也是 24h，活跃上传会被持续续期） */
+    private static final long ORPHAN_MAX_AGE_HOURS = 24;
+
+    /**
+     * 清理孤儿 MultipartUpload（定时任务：启动 15s 后执行一次 + 此后每 24h 一次）。
+     * <p>
+     * 上传会话 Redis key TTL 24h 过期后，OSS 侧未完成的 uploadId 无法再被前端续传，
+     * 若不中止会永久占用 OSS 分片存储 → 定期扫描并 abort 超龄未完成上传。
+     */
+    @Scheduled(initialDelay = 15_000, fixedDelay = 86_400_000)
+    public void cleanupExpiredMultipartUploads() {
+        List<MultipartUploadInfo> uploads;
+        try {
+            uploads = storageService.listMultipartUploads("files/");
+        } catch (Exception e) {
+            log.warn("孤儿分片清理失败（OSS 不可用?）: {}", e.getMessage());
+            return;
+        }
+        if (uploads.isEmpty()) {
+            log.info("孤儿分片清理: 无未完成的分片上传");
+            return;
+        }
+        Instant deadline = Instant.now().minusSeconds(ORPHAN_MAX_AGE_HOURS * 3600);
+        int aborted = 0;
+        for (MultipartUploadInfo info : uploads) {
+            if (info.initiatedAt() != null && info.initiatedAt().isBefore(deadline)) {
+                try {
+                    storageService.abortMultipartUpload(info.fileKey(), info.uploadId());
+                    aborted++;
+                } catch (Exception e) {
+                    log.warn("中止孤儿分片失败: key={}, uploadId={}: {}", info.fileKey(), info.uploadId(), e.getMessage());
+                }
+            } else {
+                log.info("孤儿分片清理: 跳过活跃上传 key={}, initiated={}", info.fileKey(), info.initiatedAt());
+            }
+        }
+        log.info("孤儿分片清理完成: 总数={}, 已中止={}", uploads.size(), aborted);
     }
 
     // ============================================================

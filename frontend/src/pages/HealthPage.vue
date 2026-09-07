@@ -12,7 +12,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="响应信息">{{ backendMsg }}</el-descriptions-item>
       </el-descriptions>
-      <el-button style="margin-top: 16px" @click="checkHealth" :loading="loading">
+      <el-button style="margin-top: 16px" @click="checkHealth(true)" :loading="loading">
         重新检测
       </el-button>
     </el-card>
@@ -27,10 +27,11 @@ const backendOk = ref(false)
 const backendMsg = ref('')
 const loading = ref(false)
 
-async function checkHealth() {
+// force=true 强制实时探测（后端结果缓存 30s，手动"重新检测"需绕过缓存，见 D2）
+async function checkHealth(force = false) {
   loading.value = true
   try {
-    const res = await request.get('/health')
+    const res = await request.get('/health' + (force ? '?force=1' : ''))
     backendMsg.value = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
     backendOk.value = true
   } catch (e) {
