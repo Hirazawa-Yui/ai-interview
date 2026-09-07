@@ -2,6 +2,7 @@ package com.aiinterview.interview.service.impl;
 
 import com.aiinterview.common.ai.PromptSecurityConstants;
 import com.aiinterview.common.RedisKeys;
+import com.aiinterview.common.TransactionSupport;
 import com.aiinterview.interview.dto.InterviewQuestionDTO;
 import com.aiinterview.interview.entity.InterviewAnswer;
 import com.aiinterview.interview.entity.InterviewSession;
@@ -28,8 +29,6 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -272,7 +271,7 @@ public class InterviewServiceImpl implements IInterviewService {
 
         // 7. 增量评估：每攒够 batchSize 题或最后一题，事务提交后触发异步评估批次
         //    （afterCommit 保证消费者读到的 answer/进度必为已提交数据，见坑 #8）
-        registerAfterCommit(() -> triggerIncrementalEvaluationAfterCommit(sessionId));
+        TransactionSupport.afterCommit(() -> triggerIncrementalEvaluationAfterCommit(sessionId));
 
         // 8. 判断是否答完
         if (questionNumber >= questions.size()) {
@@ -541,26 +540,6 @@ public class InterviewServiceImpl implements IInterviewService {
         }
     }
 
-    /** 注册事务提交后回调（提交后消费者读到的必是已提交数据） */
-    private void registerAfterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    try {
-                        action.run();
-                    } catch (Exception e) {
-                        // 提交已发生无法回滚，只记录（触发失败会由汇总降级/恢复Runner兜底）
-                        log.error("事务提交后回调执行失败", e);
-                    }
-                }
-            });
-        } else {
-            // 无事务上下文时直接执行（当前 submitAnswer 恒在事务内，防御分支）
-            action.run();
-        }
-    }
-
     /**
      * 增量评估触发（事务提交后执行）：重新读取已提交的会话进度，
      * 每攒够 batchSize 题或最后一题则发送异步评估批次到 Stream
@@ -589,8 +568,8 @@ public class InterviewServiceImpl implements IInterviewService {
         int qStart = (batchNumber - 1) * batchSize + 1;
         int qEnd = Math.min(batchNumber * batchSize, totalQuestions);
 
-        // 条件2：用 Redis SETNX 防重
-        String lockKey = RedisKeys.interviewBatchLock(session.getId());
+        // 条件2：用 Redis SETNX 防重（锁 key 含批次号，防快速连答时跨批次互斥，模块05 坑#5）
+        String lockKey = RedisKeys.interviewBatchLock(session.getId(), batchNumber);
         Boolean locked = redisTemplate.opsForValue()
                 .setIfAbsent(lockKey, String.valueOf(batchNumber), Duration.ofSeconds(30));
         if (!Boolean.TRUE.equals(locked)) {

@@ -63,6 +63,7 @@
 - **前端裸 fetch**：RAG/会话 5 个接口散在 KnowledgePage.vue 内，不走 axios 拦截器（无统一错误提示）。
 - ~~删除知识库不删向量~~：✅ 已修（B4，2026-09-08）——`delete()` 现同步调 `vectorService.deleteByKbId(id)` 清理 vector_store（同库同事务原子）；实测删 kb → vector_store 零残留。`deleteByKbId` 吞异常 warn 语义保留（best-effort）。
 - kb_ids 以 JSON 字符串存储，`parseKbIds` 失败返回空列表（静默）。
+- ~~上传事务内 XADD 竞态~~：✅ 已修（T15，2026-09-08）——`upload()` 向量化任务发送改 `TransactionSupport.afterCommit`（同 modules/03 简历与 docs/00 坑 #8）。
 - 会话历史消息 `LIMIT 11` 取 11 条过滤当前 user 消息后取 10 条——对消息数边界敏感，改动需小心。
 
 ## 7. 验证要点

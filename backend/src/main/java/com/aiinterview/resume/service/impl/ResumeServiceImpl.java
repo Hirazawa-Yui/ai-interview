@@ -6,6 +6,7 @@ import com.aiinterview.resume.entity.Resume;
 import com.aiinterview.resume.entity.ResumeAnalysis;
 import com.aiinterview.common.BusinessException;
 import com.aiinterview.common.ErrorCode;
+import com.aiinterview.common.TransactionSupport;
 import com.aiinterview.resume.mapper.ResumeAnalysisMapper;
 import com.aiinterview.resume.mapper.ResumeMapper;
 import com.aiinterview.file.service.IFileStorageService;
@@ -109,8 +110,8 @@ public class ResumeServiceImpl implements IResumeService {
                 .build();
         resumeMapper.insert(resume);
 
-        // 6. 发送异步分析任务
-        analysisProducer.sendAnalyzeTask(resume.getId(), parsedText);
+        // 6. 发送异步分析任务（事务提交后发送：否则消费者可能先于提交读到行而丢消息，坑 #8）
+        TransactionSupport.afterCommit(() -> analysisProducer.sendAnalyzeTask(resume.getId(), parsedText));
 
         log.info("简历上传完成: id={}, file={}, analyzeStatus=PENDING", resume.getId(), file.getOriginalFilename());
         return ResumeUploadResponse.builder()

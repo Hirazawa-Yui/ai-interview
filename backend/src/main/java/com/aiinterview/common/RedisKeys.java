@@ -37,8 +37,8 @@ public final class RedisKeys {
     /** 面试增量评估 — 已完成批次号集合（Set），TTL 2小时 */
     public static final String INTERVIEW_BATCHEVAL_DONE = "interview:batcheval:%d:batches:done";
 
-    /** 面试增量评估 — 批次并发锁（String, SETNX），TTL 30s */
-    public static final String INTERVIEW_BATCHEVAL_LOCK = "interview:batcheval:%d:lock";
+    /** 面试增量评估 — 批次并发锁（String, SETNX），TTL 30s；key 含批次号（模块05 坑#5 修复：锁不再跨批次互斥） */
+    public static final String INTERVIEW_BATCHEVAL_LOCK = "interview:batcheval:%d:lock:%d";
 
     /** 面试题目缓存 TTL：2小时 */
     public static final long INTERVIEW_QUESTIONS_TTL = 7200L;
@@ -83,8 +83,8 @@ public final class RedisKeys {
         return String.format(INTERVIEW_BATCHEVAL_DONE, sessionId);
     }
 
-    /** 格式化 Key：interview:batcheval:{sessionId}:lock */
-    public static String interviewBatchLock(Long sessionId) {
-        return String.format(INTERVIEW_BATCHEVAL_LOCK, sessionId);
+    /** 格式化 Key：interview:batcheval:{sessionId}:lock:{batchNumber} */
+    public static String interviewBatchLock(Long sessionId, int batchNumber) {
+        return String.format(INTERVIEW_BATCHEVAL_LOCK, sessionId, batchNumber);
     }
 }

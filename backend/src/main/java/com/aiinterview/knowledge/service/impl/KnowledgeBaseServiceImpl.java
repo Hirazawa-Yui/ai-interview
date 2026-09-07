@@ -5,6 +5,7 @@ import com.aiinterview.knowledge.dto.KbListItemDTO;
 import com.aiinterview.knowledge.entity.KnowledgeBase;
 import com.aiinterview.common.BusinessException;
 import com.aiinterview.common.ErrorCode;
+import com.aiinterview.common.TransactionSupport;
 import com.aiinterview.knowledge.mapper.KnowledgeBaseMapper;
 import com.aiinterview.file.service.IFileStorageService;
 import com.aiinterview.knowledge.service.IKnowledgeBaseService;
@@ -73,8 +74,8 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
                 .build();
         kbMapper.insert(kb);
 
-        // 5. 发送向量化任务
-        vectorizeProducer.sendVectorizeTask(kb.getId(), text);
+        // 5. 发送向量化任务（事务提交后发送：否则消费者可能先于提交读到行而丢消息，坑 #8）
+        TransactionSupport.afterCommit(() -> vectorizeProducer.sendVectorizeTask(kb.getId(), text));
 
         log.info("知识库文档入库: id={}, name={}, vectorStatus=PENDING", kb.getId(), kb.getKbName());
         Map<String, Object> result = new LinkedHashMap<>();

@@ -195,7 +195,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
             // 4. 结果存 Redis
             String batchKey = RedisKeys.interviewBatchEval(sessionId, batchNumber);
             String doneKey = RedisKeys.interviewBatchDone(sessionId);
-            String lockKey = RedisKeys.interviewBatchLock(sessionId);
+            String lockKey = RedisKeys.interviewBatchLock(sessionId, batchNumber);
 
             redisTemplate.opsForValue().set(batchKey, toJson(result), Duration.ofSeconds(RedisKeys.INTERVIEW_BATCHEVAL_TTL));
             redisTemplate.opsForSet().add(doneKey, String.valueOf(batchNumber));
@@ -209,7 +209,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
         } catch (Exception e) {
             log.error("增量批次评估失败: sessionId={}, batch={}", sessionId, batchNumber, e);
             // 释放锁，允许重试
-            String lockKey = RedisKeys.interviewBatchLock(sessionId);
+            String lockKey = RedisKeys.interviewBatchLock(sessionId, batchNumber);
             redisTemplate.delete(lockKey);
             throw new RuntimeException("增量批次评估失败", e);
         }
