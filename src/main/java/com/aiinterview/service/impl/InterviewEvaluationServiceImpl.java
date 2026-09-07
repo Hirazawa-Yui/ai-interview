@@ -1,6 +1,7 @@
 package com.aiinterview.service.impl;
 
 import com.aiinterview.common.ai.PromptSecurityConstants;
+import com.aiinterview.constant.RedisKeys;
 import com.aiinterview.dto.InterviewEvaluationResponse;
 import com.aiinterview.entity.InterviewAnswer;
 import com.aiinterview.entity.InterviewEvaluation;
@@ -206,13 +207,13 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
             InterviewEvaluationResponse result = evaluateBatch(qaList, session.getDirection());
 
             // 4. 结果存 Redis
-            String batchKey = String.format("interview:batcheval:%d:%d", sessionId, batchNumber);
-            String doneKey = String.format("interview:batcheval:%d:batches:done", sessionId);
-            String lockKey = String.format("interview:batcheval:%d:lock", sessionId);
+            String batchKey = RedisKeys.interviewBatchEval(sessionId, batchNumber);
+            String doneKey = RedisKeys.interviewBatchDone(sessionId);
+            String lockKey = RedisKeys.interviewBatchLock(sessionId);
 
-            redisTemplate.opsForValue().set(batchKey, toJson(result), Duration.ofHours(2));
+            redisTemplate.opsForValue().set(batchKey, toJson(result), Duration.ofSeconds(RedisKeys.INTERVIEW_BATCHEVAL_TTL));
             redisTemplate.opsForSet().add(doneKey, String.valueOf(batchNumber));
-            redisTemplate.expire(doneKey, Duration.ofHours(2));
+            redisTemplate.expire(doneKey, Duration.ofSeconds(RedisKeys.INTERVIEW_BATCHEVAL_TTL));
 
             // 释放锁
             redisTemplate.delete(lockKey);
@@ -222,7 +223,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
         } catch (Exception e) {
             log.error("增量批次评估失败: sessionId={}, batch={}", sessionId, batchNumber, e);
             // 释放锁，允许重试
-            String lockKey = String.format("interview:batcheval:%d:lock", sessionId);
+            String lockKey = RedisKeys.interviewBatchLock(sessionId);
             redisTemplate.delete(lockKey);
             throw new RuntimeException("增量批次评估失败", e);
         }

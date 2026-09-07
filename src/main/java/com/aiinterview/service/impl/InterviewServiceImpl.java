@@ -1,6 +1,7 @@
 package com.aiinterview.service.impl;
 
 import com.aiinterview.common.ai.PromptSecurityConstants;
+import com.aiinterview.constant.RedisKeys;
 import com.aiinterview.dto.InterviewEvaluationResponse;
 import com.aiinterview.dto.InterviewQuestionDTO;
 import com.aiinterview.entity.InterviewAnswer;
@@ -58,10 +59,6 @@ public class InterviewServiceImpl implements IInterviewService {
 
     private final String questionSystemTemplate;
     private final String questionUserTemplate;
-
-    /** 题目缓存 TTL：2小时 */
-    private static final Duration QUESTIONS_TTL = Duration.ofHours(2);
-    private static final String QUESTIONS_KEY_PREFIX = "interview:questions:%d";
 
     private final int evaluationBatchSize;
     private final IInterviewEvaluationService evaluationService;
@@ -190,8 +187,8 @@ public class InterviewServiceImpl implements IInterviewService {
         sessionMapper.insert(session);
 
         // 9. 缓存题目到 Redis（TTL 2h）
-        String cacheKey = String.format(QUESTIONS_KEY_PREFIX, session.getId());
-        redisTemplate.opsForValue().set(cacheKey, questionsJson, QUESTIONS_TTL);
+        String cacheKey = RedisKeys.interviewQuestions(session.getId());
+        redisTemplate.opsForValue().set(cacheKey, questionsJson, Duration.ofSeconds(RedisKeys.INTERVIEW_QUESTIONS_TTL));
 
         // 10. 构建返回结果
         InterviewQuestionDTO firstQuestion = questions.get(0);
@@ -381,7 +378,7 @@ public class InterviewServiceImpl implements IInterviewService {
         sessionMapper.deleteById(sessionId);
 
         // 清理 Redis 缓存
-        String cacheKey = String.format(QUESTIONS_KEY_PREFIX, sessionId);
+        String cacheKey = RedisKeys.interviewQuestions(sessionId);
         redisTemplate.delete(cacheKey);
 
         log.info("面试会话删除完成: sessionId={}", sessionId);
@@ -436,7 +433,7 @@ public class InterviewServiceImpl implements IInterviewService {
     /** 收集增量批次结果 → 汇总 → 入库 */
     private void collectAndSummarize(Long sessionId, int totalQuestions, String direction) {
         int totalBatches = (totalQuestions + evaluationBatchSize - 1) / evaluationBatchSize;
-        String doneKey = String.format("interview:batcheval:%d:batches:done", sessionId);
+        String doneKey = RedisKeys.interviewBatchDone(sessionId);
 
         try {
             // 等待所有增量批次完成（最多等 30s）
@@ -458,7 +455,7 @@ public class InterviewServiceImpl implements IInterviewService {
             // 收集所有批次结果
             List<String> batchJsons = new ArrayList<>();
             for (String bn : doneBatches) {
-                String batchKey = String.format("interview:batcheval:%d:%s", sessionId, bn);
+                String batchKey = RedisKeys.interviewBatchEval(sessionId, Integer.parseInt(bn));
                 String json = redisTemplate.opsForValue().get(batchKey);
                 if (json != null) batchJsons.add(json);
             }
@@ -503,7 +500,7 @@ public class InterviewServiceImpl implements IInterviewService {
             // 清理 Redis
             redisTemplate.delete(doneKey);
             for (String bn : doneBatches) {
-                redisTemplate.delete(String.format("interview:batcheval:%d:%s", sessionId, bn));
+                redisTemplate.delete(RedisKeys.interviewBatchEval(sessionId, Integer.parseInt(bn)));
             }
 
             log.info("评估汇总完成: sessionId={}, overallScore={}", sessionId, finalResult.getOverallScore());
@@ -623,14 +620,14 @@ public class InterviewServiceImpl implements IInterviewService {
 
     /** 从 Redis 缓存或 DB 加载题目列表 */
     private List<InterviewQuestionDTO> loadQuestionsFromCache(InterviewSession session) {
-        String cacheKey = String.format(QUESTIONS_KEY_PREFIX, session.getId());
+        String cacheKey = RedisKeys.interviewQuestions(session.getId());
         String json = redisTemplate.opsForValue().get(cacheKey);
 
         if (json == null) {
             // 缓存未命中，从 DB 读取并回写缓存
             json = session.getQuestionsJson();
             if (json != null) {
-                redisTemplate.opsForValue().set(cacheKey, json, QUESTIONS_TTL);
+                redisTemplate.opsForValue().set(cacheKey, json, Duration.ofSeconds(RedisKeys.INTERVIEW_QUESTIONS_TTL));
             }
         }
 
@@ -666,7 +663,7 @@ public class InterviewServiceImpl implements IInterviewService {
         int qEnd = Math.min(batchNumber * batchSize, totalQuestions);
 
         // 条件2：用 Redis SETNX 防重
-        String lockKey = String.format("interview:batcheval:%d:lock", session.getId());
+        String lockKey = RedisKeys.interviewBatchLock(session.getId());
         Boolean locked = redisTemplate.opsForValue()
                 .setIfAbsent(lockKey, String.valueOf(batchNumber), Duration.ofSeconds(30));
         if (!Boolean.TRUE.equals(locked)) {
@@ -675,7 +672,7 @@ public class InterviewServiceImpl implements IInterviewService {
         }
 
         // 条件3：检查批次是否已完成
-        String doneKey = String.format("interview:batcheval:%d:batches:done", session.getId());
+        String doneKey = RedisKeys.interviewBatchDone(session.getId());
         Boolean alreadyDone = redisTemplate.opsForSet().isMember(doneKey, String.valueOf(batchNumber));
         if (Boolean.TRUE.equals(alreadyDone)) {
             redisTemplate.delete(lockKey);

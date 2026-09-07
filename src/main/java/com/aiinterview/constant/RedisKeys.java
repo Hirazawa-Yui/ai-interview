@@ -40,6 +40,9 @@ public final class RedisKeys {
     /** 面试增量评估 — 批次并发锁（String, SETNX），TTL 30s */
     public static final String INTERVIEW_BATCHEVAL_LOCK = "interview:batcheval:%d:lock";
 
+    /** 面试题目缓存 TTL：2小时 */
+    public static final long INTERVIEW_QUESTIONS_TTL = 7200L;
+
     /** 面试增量评估 — TTL */
     public static final long INTERVIEW_BATCHEVAL_TTL = 7200L;
 
@@ -63,5 +66,25 @@ public final class RedisKeys {
     /** 格式化 Key：file:merge:{md5} */
     public static String fileMergeLock(String md5) {
         return String.format(FILE_MERGE_LOCK, md5);
+    }
+
+    /** 格式化 Key：interview:questions:{sessionId} */
+    public static String interviewQuestions(Long sessionId) {
+        return String.format(INTERVIEW_QUESTIONS, sessionId);
+    }
+
+    /** 格式化 Key：interview:batcheval:{sessionId}:{batchNumber} */
+    public static String interviewBatchEval(Long sessionId, int batchNumber) {
+        return String.format(INTERVIEW_BATCHEVAL, sessionId, batchNumber);
+    }
+
+    /** 格式化 Key：interview:batcheval:{sessionId}:batches:done */
+    public static String interviewBatchDone(Long sessionId) {
+        return String.format(INTERVIEW_BATCHEVAL_DONE, sessionId);
+    }
+
+    /** 格式化 Key：interview:batcheval:{sessionId}:lock */
+    public static String interviewBatchLock(Long sessionId) {
+        return String.format(INTERVIEW_BATCHEVAL_LOCK, sessionId);
     }
 }
