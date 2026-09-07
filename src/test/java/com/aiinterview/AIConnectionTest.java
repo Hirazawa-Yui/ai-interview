@@ -12,17 +12,20 @@ import org.springframework.web.client.RestClient;
 /**
  * AI 联通性测试 — 直接在 main 方法跑，不依赖 Spring 容器
  * <p>
- * 用法：把下面的 baseUrl / apiKey 改成你自己的，右键 Run。
+ * 用法：API Key 从环境变量 DASHSCOPE_API_KEY 读取（本地经 .env + IDEA EnvFile 注入，
+ * 见仓库根 .env.example），右键 Run。
  * 收到回复 = 联通成功；报错 = 检查 Key 或网络。
  */
 public class AIConnectionTest {
 
     public static void main(String[] args) {
-        // ========== 改这里 ==========
         String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-        String apiKey = "sk-828bed09df0d4d70b2ac85c24b37892a";
-        String model = "qwen3.5-flash";
-        // ============================
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        String model = "qwen3.7-flash";
+        if (apiKey == null || apiKey.isBlank()) {
+            System.out.println("❌ 未配置 DASHSCOPE_API_KEY：请复制 .env.example 为 .env 填入 Key，并在 IDEA Run Configuration 用 EnvFile 插件注入");
+            return;
+        }
 
         System.out.println("=== AI 联通性测试 ===");
         System.out.println("Base URL: " + baseUrl);

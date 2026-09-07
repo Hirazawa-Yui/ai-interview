@@ -8,10 +8,14 @@ import software.amazon.awssdk.services.s3.model.ListBucketsResponse;
 
 public class OSSTest {
     public static void main(String[] args) {
-        String accessKey = "LTAI5t5dFiwnqcoR6sGANmak";
-        String secretKey = "D70OsfrYhJCSZQyJKO95VydMtp6Zj2";
+        String accessKey = System.getenv("OSS_ACCESS_KEY");
+        String secretKey = System.getenv("OSS_SECRET_KEY");
         String endpoint = "https://oss-cn-beijing.aliyuncs.com";
         Region region = Region.of("oss-cn-beijing");
+        if (accessKey == null || accessKey.isBlank() || secretKey == null || secretKey.isBlank()) {
+            System.out.println("❌ 未配置 OSS_ACCESS_KEY/OSS_SECRET_KEY：请复制 .env.example 为 .env 填入 Key，并在 IDEA Run Configuration 用 EnvFile 插件注入");
+            return;
+        }
 
         S3Client s3 = S3Client.builder()
                 .credentialsProvider(() -> AwsBasicCredentials.create(accessKey, secretKey))

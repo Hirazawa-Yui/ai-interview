@@ -37,11 +37,12 @@ spring:
   # PostgreSQL + pgvector 数据库配置
   # 容器：postgres-service (port 5432)
   # 新建 ai_interview 库，与旧项目 interview_guide 隔离
+  # 账号/密码走环境变量（带本地默认值），仓库内不落明文密钥，见 .env.example
   # ============================================
   datasource:
     url: jdbc:postgresql://localhost:5432/ai_interview
-    username: postgres
-    password: 123456
+    username: ${PG_USERNAME:postgres}
+    password: ${PG_PASSWORD:123456}
     driver-class-name: org.postgresql.Driver
 
   # 编码 & 文件上传（Spring Boot 4.x 用 spring.servlet.encoding，不再用 server.servlet.encoding）
@@ -59,12 +60,13 @@ spring:
   # Redis 配置（Spring Data Redis）
   # 容器：my_redis (port 6380)
   # 使用 1 号库，与旧项目（0号库）隔离
+  # 密码走环境变量（带本地默认值），见 .env.example
   # ============================================
   data:
     redis:
       host: localhost
       port: 6380
-      password: 123456
+      password: ${REDIS_PASSWORD:123456}
       database: 1
       lettuce:
         pool:
@@ -99,9 +101,10 @@ app:
   # ---------- AI/LLM 配置 ----------
   ai:
     # 使用单个LLM，OpenAI兼容接口
+    # API Key 走环境变量 DASHSCOPE_API_KEY（本地经 .env + IDEA EnvFile 注入），仓库不落明文
     llm:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      api-key: "sk-828bed09df0d4d70b2ac85c24b37892a"   # <-- 填写你的API Key
+      api-key: ${DASHSCOPE_API_KEY:}
       model: qwen3.7-flash
       embedding-model: qwen3.7-text-embedding
       embedding-dimensions: 1024
@@ -159,16 +162,15 @@ app:
   # ============================================
   # 阿里云 OSS 对象存储配置
   # （AWS S3 SDK S3兼容模式）
-  # 开发阶段可保持 enabled: false，不影响应用启动
-  # 配置好 AccessKey 后将 enabled 改为 true
+  # AccessKey/Secret 走环境变量（本地经 .env + IDEA EnvFile 注入），仓库不落明文
   # ============================================
   storage:
-    enabled: true                                   # <-- 配置好凭证后改为 true
-    endpoint: https://oss-cn-beijing.aliyuncs.com      # <-- 改为你的 OSS endpoint
-    access-key: "LTAI5t5dFiwnqcoR6sGANmak"             # <-- 填写 AccessKey ID
-    secret-key: "D70OsfrYhJCSZQyJKO95VydMtp6Zj2"       # <-- 填写 AccessKey Secret
-    bucket: ai-interview-101                        # <-- 改为你的 Bucket 名称
-    region: oss-cn-beijing                             # <-- 改为你的 OSS 地域    
+    enabled: true
+    endpoint: https://oss-cn-beijing.aliyuncs.com
+    access-key: ${OSS_ACCESS_KEY:}
+    secret-key: ${OSS_SECRET_KEY:}
+    bucket: ai-interview-101
+    region: oss-cn-beijing
 
   # ---------- CORS 配置（前端地址） ----------
   cors:

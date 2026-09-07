@@ -23,5 +23,11 @@ AI 模拟面试平台：简历 AI 分析、知识库 RAG 问答、模拟面试�
 ## 启动
 
 1. Docker 启动 `postgres-service`(5432) 与 `my_redis`(6380)
-2. 后端：IDEA 运行 `Application`（或 `mvn spring-boot:run`），Swagger 在 `http://localhost:8080/swagger-ui.html`
-3. 前端：`pnpm dev`（http://localhost:5173）
+2. 配置本地密钥：复制 `.env.example` → `.env`，填入 DashScope API Key 与 OSS AccessKey（`cp .env.example .env`）
+3. IDEA 运行 `Application`（或 `mvn spring-boot:run`）——密钥经 **EnvFile 插件**注入 `.env`，或设置为同名系统环境变量；未配置时应用可启动但 LLM/OSS 功能不可用
+4. Swagger 在 `http://localhost:8080/swagger-ui.html`；前端 `pnpm dev`（http://localhost:5173）
+
+## 密钥说明
+
+- 仓库内零明文密钥；`.env.example` 是占位模板（可提交），`.env` 被 gitignore 排除
+- 涉及密钥提交规范见 `CLAUDE.md`；推送 GitHub 前请在控制台轮换旧密钥（历史提交含旧值）
