@@ -22,7 +22,7 @@ springdoc:
     operations-sorter: alpha
   api-docs:
     path: /v3/api-docs
-  packages-to-scan: com.aiinterview.controller
+  packages-to-scan: com.aiinterview
 
 spring:
   application:

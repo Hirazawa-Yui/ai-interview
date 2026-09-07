@@ -3,13 +3,13 @@
 ## 一、项目总览
 - 后端 `d:\MyCode\idea_projects\AI-Interview`（本仓库）：Spring Boot 4 + Java 21 + MyBatis-Plus + PostgreSQL/pgvector + Redis Stream + OSS + 通义千问
 - 前端 `D:\MyCode\FrontEndCode\ai-interview`：Vue 3 + Element Plus（无版本控制，改动前先与用户确认）
-- 现状：Phase 1–5 已完成并提交；Phase 6 模拟面试代码已完成、待提交。详见 `docs/00-现状基线.md`
+- 现状：Phase 1–6 与 T3–T6 缺陷修复均已提交；后端已按模块分包（T11）。详见 `docs/00-现状基线.md`
 - 本规范取代 PLAN.md；**`docs/` 是跨会话的唯一知识来源**：技术栈、模块实现、坑位都以文档为准，不依赖对话记忆
 
 ## 二、开发流程
 
 ### 阶段 A：现状基线固化（一次性）
-- **动作**：① 提交 Phase 6 全部代码；② 补齐 `docs/sql/schema.sql` 与接口清单；③ 端到端验收现状；④ 修复缺陷
+- **动作（已全部完成，2026-09-07）**：① 提交 Phase 6 全部代码；② 补齐 `docs/sql/schema.sql` 与接口清单；③ 端到端验收现状；④ 修复缺陷
 - **规则**：每个提交/修复单独给用户确认，不合并推进
 
 ### 阶段 B：功能迭代（循环）
@@ -27,7 +27,7 @@
 ## 三、编码规范
 
 ### 后端
-1. 扁平分包 `com.aiinterview`；controller 薄、service 厚；接口 + Impl
+1. 按模块分包 `com.aiinterview.{common,config,stream,file,resume,knowledge,interview}`：业务模块内 controller/service/impl/entity/dto/mapper/listener 分层；共享层归 `common`（Result/异常/RedisKeys/StreamKeys/健康检查），Prompt 防护归 `common.ai`；controller 薄、service 厚；接口 + Impl
 2. 统一 `Result<T>` / `ErrorCode`（模块编号 1xxx–9xxx）/ `BusinessException` / `WebExceptionHandler`
 3. **敏感信息（API Key、AccessKey、密码）一律环境变量，禁止硬编码**进 yml/测试类
 4. Redis key 一律走 `RedisKeys`/`StreamKeys` 常量，禁止散落字面量

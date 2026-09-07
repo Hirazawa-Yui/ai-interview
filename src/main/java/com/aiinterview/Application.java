@@ -16,7 +16,12 @@ import org.springframework.scheduling.annotation.EnableAsync;
  */
 @EnableAsync
 @EnableAspectJAutoProxy(exposeProxy = true)
-@MapperScan("com.aiinterview.mapper")
+@MapperScan({
+        "com.aiinterview.file.mapper",
+        "com.aiinterview.resume.mapper",
+        "com.aiinterview.knowledge.mapper",
+        "com.aiinterview.interview.mapper"
+})
 @SpringBootApplication(exclude = {
         // 排除不需要的AI自动配置（本项目不做语音/图片/审核）
         org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration.class,

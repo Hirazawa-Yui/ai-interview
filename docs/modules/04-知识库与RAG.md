@@ -1,6 +1,6 @@
 # 04-知识库与 RAG
 
-> 模块文档 · 对应代码基线：master · 更新日期：2026-09-05
+> 模块文档 · 对应代码基线：master · 更新日期：2026-09-07
 
 ## 1. 功能概述
 两条链路：
@@ -9,14 +9,14 @@
 
 ## 2. 涉及文件
 后端：
-- `controller/KnowledgeBaseController.java` — 7 端点（upload/list/detail/delete/category/revectorize）
-- `controller/RagChatController.java` — 6 端点（SSE 单次问答 + 会话 CRUD + SSE 多轮）
-- `service/impl/KnowledgeBaseServiceImpl.java` — 入库编排：OSS 下载 → 按后缀分流解析（pdf/doc/docx 走 Tika，其余按 UTF-8 文本）→ MD5 去重 → XADD
-- `service/impl/KbVectorServiceImpl.java` — TokenTextSplitter(800) 切分 → 删旧向量（JdbcTemplate `DELETE FROM vector_store WHERE metadata->>'kb_id'=?`）→ 每批 ≤10 嵌入入库；相似度检索（filter 表达式 + fallback 本地过滤）
-- `service/impl/KbQueryServiceImpl.java` — 问答编排：Rewrite → 动态 topK → 检索 → RAG Prompt → SSE 探测窗口
-- `service/impl/RagChatServiceImpl.java` — 会话 CRUD + AI 占位消息 + 历史拼接（最近 10 条）
-- `stream/listener/VectorizeProducer.java` / `VectorizeConsumer.java`
-- `entity/KnowledgeBase.java`、`RagChatSession.java`（kb_ids 存 JSON 字符串）、`RagChatMessage.java`（role/messageOrder/completed）
+- `knowledge/controller/KnowledgeBaseController.java` — 7 端点（upload/list/detail/delete/category/revectorize）
+- `knowledge/controller/RagChatController.java` — 6 端点（SSE 单次问答 + 会话 CRUD + SSE 多轮）
+- `knowledge/service/impl/KnowledgeBaseServiceImpl.java` — 入库编排：OSS 下载 → 按后缀分流解析（pdf/doc/docx 走 Tika，其余按 UTF-8 文本）→ MD5 去重 → XADD
+- `knowledge/service/impl/KbVectorServiceImpl.java` — TokenTextSplitter(800) 切分 → 删旧向量（JdbcTemplate `DELETE FROM vector_store WHERE metadata->>'kb_id'=?`）→ 每批 ≤10 嵌入入库；相似度检索（filter 表达式 + fallback 本地过滤）
+- `knowledge/service/impl/KbQueryServiceImpl.java` — 问答编排：Rewrite → 动态 topK → 检索 → RAG Prompt → SSE 探测窗口
+- `knowledge/service/impl/RagChatServiceImpl.java` — 会话 CRUD + AI 占位消息 + 历史拼接（最近 10 条）
+- `knowledge/listener/VectorizeProducer.java` / `VectorizeConsumer.java`
+- `knowledge/entity/KnowledgeBase.java`、`RagChatSession.java`（kb_ids 存 JSON 字符串）、`RagChatMessage.java`（role/messageOrder/completed）
 - `resources/prompts/kb-query-system.st` / `kb-query-user.st` / `kb-query-rewrite.st`
 - 配置：`application.yml` 的 `app.ai.rag.*`（rewrite 开关、max-history-chars 200、长短查询阈值、topK 20/12/8、minScore 0.18/0.28）
 

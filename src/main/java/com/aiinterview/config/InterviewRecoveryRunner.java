@@ -1,8 +1,8 @@
 package com.aiinterview.config;
 
-import com.aiinterview.entity.InterviewSession;
-import com.aiinterview.mapper.InterviewSessionMapper;
-import com.aiinterview.stream.listener.InterviewEvaluationProducer;
+import com.aiinterview.interview.entity.InterviewSession;
+import com.aiinterview.interview.mapper.InterviewSessionMapper;
+import com.aiinterview.interview.listener.InterviewEvaluationProducer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -15,7 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.aiinterview.constant.StreamKeys.*;
+import static com.aiinterview.common.StreamKeys.*;
 
 /**
  * Redis Stream 消费者模板（Spring Data Redis 版）

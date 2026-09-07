@@ -1,12 +1,12 @@
 # 02-Prompt 注入防护
 
-> 模块文档 · 对应代码基线：master · 更新日期：2026-09-05
+> 模块文档 · 对应代码基线：master · 更新日期：2026-09-07
 
 ## 1. 功能概述
 平台所有功能都在与 LLM 交互，用户的简历/文档/面试回答最终会拼进 Prompt，攻击面大。本模块提供**三层纵深防御**，Phase 4~6 所有 LLM 调用点统一经 `IPromptDefenseService` 编排。三层机制完全不同，同时失效概率极低（类比：正则=参数校验、分隔符=参数化查询、输出护栏=结果二次校验）。
 
 ## 2. 涉及文件
-- `service/IPromptDefenseService.java` + `impl/PromptDefenseServiceImpl.java` — 编排层（sanitizeAndWrap / sanitize / wrapWithDelimiters / guardOutput）
+- `common/ai/IPromptDefenseService.java` + `common/ai/PromptDefenseServiceImpl.java` — 编排层（sanitizeAndWrap / sanitize / wrapWithDelimiters / guardOutput）
 - `common/ai/PromptSanitizer.java` — 第一层正则净化 + 第二层动态分隔符
 - `common/ai/DefensePatternLoader.java` — 从 JSON 加载并编译正则（启动时 `@PostConstruct`）
 - `common/ai/OutputGuardConfig.java` — 第三层开关（`@ConfigurationProperties app.ai.defense.output-guard`）

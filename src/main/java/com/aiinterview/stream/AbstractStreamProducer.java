@@ -61,7 +61,7 @@ public abstract class AbstractStreamProducer<T> {
 
     /** Stream 最大长度（裁剪用） */
     protected long streamMaxLen() {
-        return com.aiinterview.constant.StreamKeys.STREAM_MAX_LEN;
+        return com.aiinterview.common.StreamKeys.STREAM_MAX_LEN;
     }
 
     /** 从 payload 构建消息体 Map */
