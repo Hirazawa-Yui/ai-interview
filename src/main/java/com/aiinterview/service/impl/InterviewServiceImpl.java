@@ -2,7 +2,6 @@ package com.aiinterview.service.impl;
 
 import com.aiinterview.common.ai.PromptSecurityConstants;
 import com.aiinterview.constant.RedisKeys;
-import com.aiinterview.dto.InterviewEvaluationResponse;
 import com.aiinterview.dto.InterviewQuestionDTO;
 import com.aiinterview.entity.InterviewAnswer;
 import com.aiinterview.entity.InterviewSession;
@@ -15,7 +14,6 @@ import com.aiinterview.mapper.InterviewEvaluationMapper;
 import com.aiinterview.mapper.InterviewSessionMapper;
 import com.aiinterview.mapper.ResumeMapper;
 import com.aiinterview.service.IPromptDefenseService;
-import com.aiinterview.service.IInterviewEvaluationService;
 import com.aiinterview.service.IInterviewService;
 import com.aiinterview.stream.listener.InterviewEvaluationProducer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -61,7 +59,6 @@ public class InterviewServiceImpl implements IInterviewService {
     private final String questionUserTemplate;
 
     private final int evaluationBatchSize;
-    private final IInterviewEvaluationService evaluationService;
 
     public InterviewServiceImpl(ChatClient chatClient,
                                 IPromptDefenseService defenseService,
@@ -72,7 +69,6 @@ public class InterviewServiceImpl implements IInterviewService {
                                 StringRedisTemplate redisTemplate,
                                 ObjectMapper objectMapper,
                                 InterviewEvaluationProducer evaluationProducer,
-                                IInterviewEvaluationService evaluationService,
                                 @Value("${app.interview.question-system-prompt:classpath:prompts/interview-question-system.st}") String sysPath,
                                 @Value("${app.interview.question-user-prompt:classpath:prompts/interview-question-user.st}") String usrPath,
                                 @Value("${app.interview.evaluation.batch-size:4}") int evaluationBatchSize) {
@@ -85,7 +81,6 @@ public class InterviewServiceImpl implements IInterviewService {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.evaluationProducer = evaluationProducer;
-        this.evaluationService = evaluationService;
         this.evaluationBatchSize = evaluationBatchSize;
         this.questionSystemTemplate = loadTemplate(sysPath);
         this.questionUserTemplate = loadTemplate(usrPath);
@@ -418,143 +413,15 @@ public class InterviewServiceImpl implements IInterviewService {
         session.setUpdatedAt(LocalDateTime.now());
         sessionMapper.updateById(session);
 
-        // 5. 异步汇总增量评估结果（在另一个线程中执行，不阻塞返回）
-        final String direction = session.getDirection();
-        new Thread(() -> collectAndSummarize(sessionId, session.getQuestionCount(), direction),
-                "eval-summary-" + sessionId).start();
+        // 5. 发送汇总任务到 Stream（由消费者线程收集批次 + 1次 LLM 汇总；替代原裸 new Thread，
+        //    应用重启后由 InterviewRecoveryRunner 扫描补发，避免会话永久卡 EVALUATING）
+        evaluationProducer.sendSummarizeTask(sessionId);
 
         log.info("评估汇总已触发: sessionId={}", sessionId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("evaluateStatus", "EVALUATING");
         result.put("message", "评估已提交，AI正在汇总分析中...");
         return result;
-    }
-
-    /** 收集增量批次结果 → 汇总 → 入库 */
-    private void collectAndSummarize(Long sessionId, int totalQuestions, String direction) {
-        int totalBatches = (totalQuestions + evaluationBatchSize - 1) / evaluationBatchSize;
-        String doneKey = RedisKeys.interviewBatchDone(sessionId);
-
-        try {
-            // 等待所有增量批次完成（最多等 30s）
-            Set<String> doneBatches = new HashSet<>();
-            for (int attempt = 0; attempt < 30; attempt++) {
-                doneBatches = redisTemplate.opsForSet().members(doneKey);
-                if (doneBatches != null && doneBatches.size() >= totalBatches) break;
-                Thread.sleep(1000);
-            }
-
-            if (doneBatches == null || doneBatches.size() < totalBatches) {
-                // 降级：发送全量评估任务到 Stream
-                log.warn("增量批次不完整，降级全量评估: sessionId={}, done={}/{}, totalBatches={}",
-                        sessionId, doneBatches != null ? doneBatches.size() : 0, totalBatches, totalBatches);
-                evaluationProducer.sendEvaluateTask(sessionId);
-                return;
-            }
-
-            // 收集所有批次结果
-            List<String> batchJsons = new ArrayList<>();
-            for (String bn : doneBatches) {
-                String batchKey = RedisKeys.interviewBatchEval(sessionId, Integer.parseInt(bn));
-                String json = redisTemplate.opsForValue().get(batchKey);
-                if (json != null) batchJsons.add(json);
-            }
-
-            if (batchJsons.isEmpty()) {
-                log.warn("增量批次结果为空，降级全量评估: sessionId={}", sessionId);
-                evaluationProducer.sendEvaluateTask(sessionId);
-                return;
-            }
-
-            // 汇总（1次 LLM 调用）
-            InterviewEvaluationResponse finalResult;
-            try {
-                finalResult = evaluationService.summarizeBatches(batchJsons);
-            } catch (Exception e) {
-                log.warn("汇总LLM调用失败，降级拼接: sessionId={}", sessionId, e);
-                // 降级：解析各批次结果，取平均分
-                finalResult = degradeMergeBathes(batchJsons);
-            }
-
-            // 保存评估结果
-            InterviewEvaluation evaluation = InterviewEvaluation.builder()
-                    .sessionId(sessionId)
-                    .overallScore(finalResult.getOverallScore())
-                    .summary(finalResult.getSummary())
-                    .perQuestionJson(toJson(finalResult.getPerQuestion()))
-                    .strengthsJson(toJson(finalResult.getStrengths()))
-                    .improvementsJson(toJson(finalResult.getImprovements()))
-                    .aiRawResponse(toJson(finalResult))
-                    .evaluatedAt(LocalDateTime.now())
-                    .build();
-            evaluationMapper.insert(evaluation);
-
-            // 更新会话状态
-            InterviewSession session = sessionMapper.selectById(sessionId);
-            if (session != null) {
-                session.setStatus("EVALUATED");
-                session.setUpdatedAt(LocalDateTime.now());
-                sessionMapper.updateById(session);
-            }
-
-            // 清理 Redis
-            redisTemplate.delete(doneKey);
-            for (String bn : doneBatches) {
-                redisTemplate.delete(RedisKeys.interviewBatchEval(sessionId, Integer.parseInt(bn)));
-            }
-
-            log.info("评估汇总完成: sessionId={}, overallScore={}", sessionId, finalResult.getOverallScore());
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("评估汇总被中断: sessionId={}", sessionId);
-        } catch (Exception e) {
-            log.error("评估汇总异常: sessionId={}", sessionId, e);
-            InterviewSession session = sessionMapper.selectById(sessionId);
-            if (session != null) {
-                session.setStatus("FAILED");
-                session.setEvaluateError(truncateStr(e.getMessage(), 500));
-                session.setUpdatedAt(LocalDateTime.now());
-                sessionMapper.updateById(session);
-            }
-        }
-    }
-
-    /** 降级合并各批次结果（不调LLM） */
-    private InterviewEvaluationResponse degradeMergeBathes(List<String> batchJsons) {
-        List<InterviewEvaluationResponse.QuestionEvaluation> allPerQ = new ArrayList<>();
-        List<String> allStrengths = new ArrayList<>();
-        List<InterviewEvaluationResponse.Suggestion> allImps = new ArrayList<>();
-        int totalScore = 0, count = 0;
-
-        for (String json : batchJsons) {
-            try {
-                InterviewEvaluationResponse b = objectMapper.readValue(json, InterviewEvaluationResponse.class);
-                totalScore += b.getOverallScore();
-                count++;
-                if (b.getPerQuestion() != null) allPerQ.addAll(b.getPerQuestion());
-                if (b.getStrengths() != null) allStrengths.addAll(b.getStrengths());
-                if (b.getImprovements() != null) allImps.addAll(b.getImprovements());
-            } catch (Exception e) {
-                log.warn("降级合并解析失败: {}", e.getMessage());
-            }
-        }
-
-        InterviewEvaluationResponse r = new InterviewEvaluationResponse();
-        r.setOverallScore(count > 0 ? totalScore / count : 0);
-        r.setSummary("评估报告（降级模式）：共" + allPerQ.size() + "道题，平均分" + r.getOverallScore());
-        r.setPerQuestion(allPerQ);
-        r.setStrengths(allStrengths.stream().distinct().limit(5).collect(Collectors.toList()));
-        r.setImprovements(allImps.stream().limit(5).collect(Collectors.toList()));
-        return r;
-    }
-
-    private String toJson(Object obj) {
-        try { return objectMapper.writeValueAsString(obj); } catch (Exception e) { return "{}"; }
-    }
-
-    private String truncateStr(String s, int max) {
-        return s != null && s.length() > max ? s.substring(0, max) : s;
     }
 
     // ============================================================

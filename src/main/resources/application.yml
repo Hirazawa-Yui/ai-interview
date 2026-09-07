@@ -102,8 +102,8 @@ app:
     llm:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       api-key: "sk-828bed09df0d4d70b2ac85c24b37892a"   # <-- 填写你的API Key
-      model: qwen3.5-flash
-      embedding-model: text-embedding-v4
+      model: qwen3.7-flash
+      embedding-model: qwen3.7-text-embedding
       embedding-dimensions: 1024
 
     # ---------- Prompt 注入防护配置 ----------

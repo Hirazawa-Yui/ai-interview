@@ -49,4 +49,15 @@ public interface IInterviewEvaluationService {
      * @return 汇总后的评估结果
      */
     InterviewEvaluationResponse summarizeBatches(List<String> batchResults);
+
+    /**
+     * 汇总并入库（由Consumer的 SUMMARIZE 消息调用，替代原裸 new Thread 汇总）
+     * <p>
+     * 幂等（仅 EVALUATING 状态执行）：等待增量批次（最多30s）→ 批次齐则收集 +
+     * 1次 LLM 汇总（失败降级本地拼接）→ 入库 interview_evaluations → EVALUATED；
+     * 批次不齐/为空 → 降级发送全量评估消息兜底。失败置 FAILED。
+     *
+     * @param sessionId 会话ID
+     */
+    void summarizeAndPersist(Long sessionId);
 }

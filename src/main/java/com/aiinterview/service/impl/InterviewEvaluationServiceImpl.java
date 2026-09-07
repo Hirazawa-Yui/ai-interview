@@ -13,6 +13,7 @@ import com.aiinterview.mapper.InterviewEvaluationMapper;
 import com.aiinterview.mapper.InterviewSessionMapper;
 import com.aiinterview.service.IInterviewEvaluationService;
 import com.aiinterview.service.IPromptDefenseService;
+import com.aiinterview.stream.listener.InterviewEvaluationProducer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
     private final String summarySystemTemplate;
 
     private final int batchSize;
+    private final InterviewEvaluationProducer evaluationProducer;
 
     public InterviewEvaluationServiceImpl(ChatClient chatClient,
                                            IPromptDefenseService defenseService,
@@ -59,6 +61,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
                                            InterviewEvaluationMapper evaluationMapper,
                                            ObjectMapper objectMapper,
                                            StringRedisTemplate redisTemplate,
+                                           InterviewEvaluationProducer evaluationProducer,
                                            @Value("${app.interview.evaluation.system-prompt:classpath:prompts/interview-evaluation-system.st}") String evalSysPath,
                                            @Value("${app.interview.evaluation.user-prompt:classpath:prompts/interview-evaluation-user.st}") String evalUsrPath,
                                            @Value("${app.interview.evaluation.summary-system-prompt:classpath:prompts/interview-summary-system.st}") String sumSysPath,
@@ -70,6 +73,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
         this.evaluationMapper = evaluationMapper;
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
+        this.evaluationProducer = evaluationProducer;
         this.evalSystemTemplate = loadTemplate(evalSysPath);
         this.evalUserTemplate = loadTemplate(evalUsrPath);
         this.summarySystemTemplate = loadTemplate(sumSysPath);
@@ -141,23 +145,8 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
                 }
             }
 
-            // 4. 保存评估结果
-            InterviewEvaluation evaluation = InterviewEvaluation.builder()
-                    .sessionId(sessionId)
-                    .overallScore(finalResult.getOverallScore())
-                    .summary(finalResult.getSummary())
-                    .perQuestionJson(toJson(finalResult.getPerQuestion()))
-                    .strengthsJson(toJson(finalResult.getStrengths()))
-                    .improvementsJson(toJson(finalResult.getImprovements()))
-                    .aiRawResponse(toJson(finalResult))
-                    .evaluatedAt(LocalDateTime.now())
-                    .build();
-            evaluationMapper.insert(evaluation);
-
-            // 5. 更新会话状态
-            session.setStatus("EVALUATED");
-            session.setUpdatedAt(LocalDateTime.now());
-            sessionMapper.updateById(session);
+            // 4. 保存评估结果 + 更新会话状态
+            persistEvaluation(sessionId, finalResult);
 
             log.info("评估完成: sessionId={}, overallScore={}", sessionId, finalResult.getOverallScore());
 
@@ -165,10 +154,7 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
             throw e;
         } catch (Exception e) {
             log.error("评估异常: sessionId={}", sessionId, e);
-            session.setStatus("FAILED");
-            session.setEvaluateError(truncate(e.getMessage(), 500));
-            session.setUpdatedAt(LocalDateTime.now());
-            sessionMapper.updateById(session);
+            markSessionFailed(sessionId, e.getMessage());
         }
     }
 
@@ -226,6 +212,124 @@ public class InterviewEvaluationServiceImpl implements IInterviewEvaluationServi
             String lockKey = RedisKeys.interviewBatchLock(sessionId);
             redisTemplate.delete(lockKey);
             throw new RuntimeException("增量批次评估失败", e);
+        }
+    }
+
+    // ============================================================
+    // 汇总并入库（SUMMARIZE 消息入口，替代原裸 new Thread 汇总）
+    // ============================================================
+
+    @Override
+    public void summarizeAndPersist(Long sessionId) {
+        InterviewSession session = sessionMapper.selectById(sessionId);
+        if (session == null) {
+            log.error("汇总失败：会话不存在 sessionId={}", sessionId);
+            return;
+        }
+        // 幂等：仅 EVALUATING 状态执行汇总（防重复消息 / 乱序旧消息 / 启动恢复补发重复）
+        if (!"EVALUATING".equals(session.getStatus())) {
+            log.info("跳过汇总（状态非 EVALUATING）: sessionId={}, status={}", sessionId, session.getStatus());
+            return;
+        }
+
+        int totalQuestions = session.getQuestionCount() == null ? 0 : session.getQuestionCount();
+        int totalBatches = (totalQuestions + batchSize - 1) / batchSize;
+        if (totalBatches <= 0) {
+            log.warn("无题目数，降级全量评估: sessionId={}", sessionId);
+            evaluationProducer.sendEvaluateTask(sessionId);
+            return;
+        }
+        String doneKey = RedisKeys.interviewBatchDone(sessionId);
+
+        try {
+            // 1. 等待所有增量批次完成（最多等 30s；批次消息先于汇总消息入队，正常无需等待）
+            Set<String> doneBatches = new HashSet<>();
+            for (int attempt = 0; attempt < 30; attempt++) {
+                doneBatches = redisTemplate.opsForSet().members(doneKey);
+                if (doneBatches != null && doneBatches.size() >= totalBatches) break;
+                Thread.sleep(1000);
+            }
+
+            if (doneBatches == null || doneBatches.size() < totalBatches) {
+                // 2. 批次不齐 → 降级全量评估（消费线程处理，不阻塞其他消息类型）
+                log.warn("增量批次不完整，降级全量评估: sessionId={}, done={}/{}",
+                        sessionId, doneBatches != null ? doneBatches.size() : 0, totalBatches);
+                evaluationProducer.sendEvaluateTask(sessionId);
+                return;
+            }
+
+            // 3. 收集所有批次结果
+            List<String> batchJsons = new ArrayList<>();
+            for (String bn : doneBatches) {
+                String json = redisTemplate.opsForValue()
+                        .get(RedisKeys.interviewBatchEval(sessionId, Integer.parseInt(bn)));
+                if (json != null) batchJsons.add(json);
+            }
+            if (batchJsons.isEmpty()) {
+                log.warn("增量批次结果为空，降级全量评估: sessionId={}", sessionId);
+                evaluationProducer.sendEvaluateTask(sessionId);
+                return;
+            }
+
+            // 4. 汇总（1次 LLM 调用，失败降级本地拼接）
+            InterviewEvaluationResponse finalResult;
+            try {
+                finalResult = summarizeBatches(batchJsons);
+            } catch (Exception e) {
+                log.warn("汇总LLM调用失败，降级拼接: sessionId={}", sessionId, e);
+                finalResult = degradeMerge(batchJsons);
+            }
+
+            // 5. 入库 + 更新状态 EVALUATED
+            persistEvaluation(sessionId, finalResult);
+
+            // 6. 清理 Redis 增量缓存
+            redisTemplate.delete(doneKey);
+            for (String bn : doneBatches) {
+                redisTemplate.delete(RedisKeys.interviewBatchEval(sessionId, Integer.parseInt(bn)));
+            }
+
+            log.info("评估汇总完成: sessionId={}, overallScore={}", sessionId, finalResult.getOverallScore());
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("评估汇总被中断: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.error("评估汇总异常: sessionId={}", sessionId, e);
+            markSessionFailed(sessionId, e.getMessage());
+        }
+    }
+
+    /** 评估结果入库 + 更新会话状态 EVALUATED（全量评估与汇总共用） */
+    private void persistEvaluation(Long sessionId, InterviewEvaluationResponse finalResult) {
+        InterviewEvaluation evaluation = InterviewEvaluation.builder()
+                .sessionId(sessionId)
+                .overallScore(finalResult.getOverallScore())
+                .summary(finalResult.getSummary())
+                .perQuestionJson(toJson(finalResult.getPerQuestion()))
+                .strengthsJson(toJson(finalResult.getStrengths()))
+                .improvementsJson(toJson(finalResult.getImprovements()))
+                .aiRawResponse(toJson(finalResult))
+                .evaluatedAt(LocalDateTime.now())
+                .build();
+        evaluationMapper.insert(evaluation);
+
+        InterviewSession session = sessionMapper.selectById(sessionId);
+        if (session != null) {
+            session.setStatus("EVALUATED");
+            session.setUpdatedAt(LocalDateTime.now());
+            sessionMapper.updateById(session);
+        }
+    }
+
+    /** 置会话 FAILED + 失败原因（全量评估与汇总共用） */
+    private void markSessionFailed(Long sessionId, String error) {
+        InterviewSession session = sessionMapper.selectById(sessionId);
+        if (session != null) {
+            session.setStatus("FAILED");
+            session.setEvaluateError(truncate(error, 500));
+            session.setUpdatedAt(LocalDateTime.now());
+            sessionMapper.updateById(session);
         }
     }
 
