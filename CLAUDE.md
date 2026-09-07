@@ -1,9 +1,9 @@
 # AI-Interview 开发规范
 
 ## 一、项目总览
-- 后端 `d:\MyCode\idea_projects\AI-Interview`（本仓库）：Spring Boot 4 + Java 21 + MyBatis-Plus + PostgreSQL/pgvector + Redis Stream + OSS + 通义千问
-- 前端 `D:\MyCode\FrontEndCode\ai-interview`：Vue 3 + Element Plus（无版本控制，改动前先与用户确认）
-- 现状：Phase 1–6 与 T3–T6 缺陷修复均已提交；后端已按模块分包（T11）。详见 `docs/00-现状基线.md`
+- 后端 `backend/`（本仓库 monorepo）：Spring Boot 4 + Java 21 + MyBatis-Plus + PostgreSQL/pgvector + Redis Stream + OSS + 通义千问
+- 前端 `frontend/`：Vue 3 + Element Plus（已纳入本仓库版本控制，T12）
+- 现状：Phase 1–6 与 T3–T6 缺陷修复均已提交；后端已按模块分包（T11）；仓库已重构为 backend/ + frontend/ monorepo，前端入版本控制（T12）。详见 `docs/00-现状基线.md`
 - 本规范取代 PLAN.md；**`docs/` 是跨会话的唯一知识来源**：技术栈、模块实现、坑位都以文档为准，不依赖对话记忆
 
 ## 二、开发流程
@@ -63,7 +63,7 @@
 - Spring AI 2.0.0-M4 依赖 milestone 仓库
 - Redis Stream 消费组不存在时 `createGroup` 失败被吞 → 消费前确保组已建（MKSTREAM）
 - pgvector 由 Spring AI 自动建表（`initialize-schema: true`）
-- 前端无版本控制：改前端文件前先告知用户，重大改动建议先备份
+- ~~前端无版本控制~~：✅ 已修（T12，2026-09-07）——前端已入本仓库 `frontend/`，原目录 `D:\MyCode\FrontEndCode\ai-interview` 保留为备份；改动一律在 `frontend/` 进行
 
 ## 六、执行指令
 - **每轮对话开始**：先读 `docs/00-现状基线.md` + `docs/03-任务清单.md`，再读本次涉及的 `docs/modules/` 模块文档；动代码前必须掌握既有实现

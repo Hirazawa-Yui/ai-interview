@@ -6,11 +6,11 @@ target/
 # IDE
 .idea/
 *.iml
-.vscode/
+/backend/.vscode/
 
 # Logs
 *.log
-/tmp/
+/backend/tmp/
 
 # OS
 .DS_Store

@@ -11,9 +11,9 @@
 - `common/ai/DefensePatternLoader.java` — 从 JSON 加载并编译正则（启动时 `@PostConstruct`）
 - `common/ai/OutputGuardConfig.java` — 第三层开关（`@ConfigurationProperties app.ai.defense.output-guard`）
 - `common/ai/PromptSecurityConstants.java` — 追加到 system prompt 的防注入指令常量
-- `resources/defense/injection-patterns.json` — 第一层 5 条模式（行首角色标记/英文指令覆盖/中文指令覆盖/分隔符伪造/动态标签伪造）
-- `resources/defense/output-guard-patterns.json` — 第三层 6 条投降语模式
-- `src/test/java/com/aiinterview/PromptDefenseTest.java` — 14 个单测（含误杀回归用例），本项目唯一真实测试
+- `backend/src/main/resources/defense/injection-patterns.json` — 第一层 5 条模式（行首角色标记/英文指令覆盖/中文指令覆盖/分隔符伪造/动态标签伪造）
+- `backend/src/main/resources/defense/output-guard-patterns.json` — 第三层 6 条投降语模式
+- `backend/src/test/java/com/aiinterview/PromptDefenseTest.java` — 14 个单测（含误杀回归用例），本项目唯一真实测试
 - 配置：`application.yml` 的 `app.ai.defense.*`（sanitizer/delimiter/output-guard 三开关）
 
 ## 3. 核心流程（调用 LLM 的标准姿势）
