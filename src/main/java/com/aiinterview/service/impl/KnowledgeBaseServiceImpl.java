@@ -32,13 +32,9 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
     public Map<String, Object> upload(String fileKey, String kbName, String category) {
         // 1. 从OSS下载文件并解析文本
         byte[] fileBytes = storageService.downloadFile(fileKey);
-        String text;
-        try {
-            text = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            // 二进制文件（PDF/Word），用Tika解析
-            text = parseWithTika(fileBytes, fileKey);
-        }
+        String text = isBinaryFormat(fileKey)
+                ? parseWithTika(fileBytes, fileKey)
+                : cleanParsedText(new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8));
 
         // 2. 计算MD5去重
         String md5 = DigestUtil.md5Hex(fileBytes);
@@ -161,10 +157,24 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
             var context = new org.apache.tika.parser.ParseContext();
             var parser = new org.apache.tika.parser.AutoDetectParser();
             parser.parse(new java.io.ByteArrayInputStream(fileBytes), handler, metadata, context);
-            return handler.toString().trim();
+            return cleanParsedText(handler.toString());
         } catch (Exception e) {
             log.error("Tika解析失败: {}", fileName, e);
             throw new BusinessException(ErrorCode.KNOWLEDGE_BASE_PARSE_FAILED, "文档解析失败");
         }
+    }
+
+    /** 清理 Tika 解析文本，去除控制字符和多余空行 */
+    private String cleanParsedText(String text) {
+        return text
+                .replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", "")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+    }
+
+    /** 根据文件后缀判断是否为需要 Tika 解析的二进制格式 */
+    private boolean isBinaryFormat(String fileKey) {
+        String lower = fileKey.toLowerCase();
+        return lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx");
     }
 }

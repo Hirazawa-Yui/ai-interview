@@ -18,6 +18,11 @@ public final class StreamKeys {
     public static final String KB_VECTORIZE_GROUP = "vectorize-group";
     public static final String KB_VECTORIZE_CONSUMER_PREFIX = "vectorize-consumer-";
 
+    // ========== 面试评估（Phase 6b） ==========
+    public static final String INTERVIEW_EVALUATE_STREAM = "interview:evaluate:stream";
+    public static final String INTERVIEW_EVALUATE_GROUP = "evaluate-group";
+    public static final String INTERVIEW_EVALUATE_CONSUMER_PREFIX = "evaluate-consumer-";
+
     // ========== 公共配置 ==========
     public static final int MAX_RETRY_COUNT = 3;
     public static final int BATCH_SIZE = 10;

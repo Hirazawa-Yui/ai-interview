@@ -103,7 +103,7 @@ app:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       api-key: "sk-828bed09df0d4d70b2ac85c24b37892a"   # <-- 填写你的API Key
       model: qwen3.5-flash
-      embedding-model: text-embedding-v3
+      embedding-model: text-embedding-v4
       embedding-dimensions: 1024
 
     # ---------- Prompt 注入防护配置 ----------
@@ -126,6 +126,7 @@ app:
     rag:
       rewrite:
         enabled: true                         # Query Rewrite：用LLM改写用户问题提升检索命中率
+        max-history-chars: 200                # 改写时注入的助手回复最大字符数（截断）
       search:
         short-query-length: 4                 # 短查询阈值（≤4字视为短查询）
         long-query-length: 16                 # 长查询阈值（≥16字视为长查询，中间为中等查询）
@@ -137,9 +138,14 @@ app:
 
   # ---------- 面试配置 ----------
   interview:
-    follow-up-count: 1
+    follow-up-count: 0                          # 追问次数（0=不追问）
+    question-system-prompt: classpath:prompts/interview-question-system.st
+    question-user-prompt: classpath:prompts/interview-question-user.st
     evaluation:
       batch-size: 4                           # 分批评估，每批4题，避免超出LLM输出限制
+      system-prompt: classpath:prompts/interview-evaluation-system.st
+      user-prompt: classpath:prompts/interview-evaluation-user.st
+      summary-system-prompt: classpath:prompts/interview-summary-system.st
 
   # ---------- 简历配置 ----------
   resume:

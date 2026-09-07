@@ -8,7 +8,9 @@ import com.aiinterview.service.IKbVectorService;
 import com.aiinterview.service.IPromptDefenseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -101,18 +103,48 @@ public class KbQueryServiceImpl implements IKbQueryService {
     }
 
     // ========== Query Rewrite ==========
+
+    /** 改写时注入的助手回复最大字符数（截断，避免Prompt过长） */
+    @Value("${app.ai.rag.rewrite.max-history-chars:200}")
+    private int maxRewriteHistoryChars;
+
     private String rewriteQuestion(String question, List<Message> history) {
         try {
-            String userMsg = rewritePrompt.replace("{question}", question);
+            String historyText = formatHistoryForRewrite(history);
+            String userMsg = rewritePrompt
+                    .replace("{question}", question)
+                    .replace("{history}", historyText);
             String result = chatClient.prompt().user(userMsg).call().content();
             if (result != null && !result.isBlank() && result.length() <= 200) {
-                log.info("Query Rewrite: \"{}\" → \"{}\"", question, result.trim());
+                log.info("Query Rewrite: \"{}\" → \"{}\" (historySize={})",
+                        question, result.trim(), history != null ? history.size() : 0);
                 return result.trim();
             }
         } catch (Exception e) {
             log.warn("Query Rewrite失败，使用原始问题: {}", e.getMessage());
         }
         return question;
+    }
+
+    /** 格式化历史消息为文本，注入 Rewrite Prompt */
+    private String formatHistoryForRewrite(List<Message> history) {
+        if (history == null || history.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n对话历史：\n");
+        for (Message msg : history) {
+            if (msg instanceof UserMessage) {
+                sb.append("用户: ").append(msg.getText()).append("\n");
+            } else if (msg instanceof AssistantMessage) {
+                String text = msg.getText();
+                if (text.length() > maxRewriteHistoryChars) {
+                    text = text.substring(0, maxRewriteHistoryChars) + "...";
+                }
+                sb.append("助手: ").append(text).append("\n");
+            }
+        }
+        return sb.toString().trim();
     }
 
     // ========== 动态 topK ==========

@@ -26,6 +26,23 @@ public final class RedisKeys {
     /** 文件上传状态 TTL：24小时 */
     public static final long FILE_UPLOAD_TTL = 86400L;
 
+    // ========== 面试缓存 ==========
+
+    /** 面试题目缓存（String, JSON Array），TTL 2小时 */
+    public static final String INTERVIEW_QUESTIONS = "interview:questions:%d";
+
+    /** 面试增量评估 — 批次结果缓存（String, JSON），TTL 2小时 */
+    public static final String INTERVIEW_BATCHEVAL = "interview:batcheval:%d:%d";
+
+    /** 面试增量评估 — 已完成批次号集合（Set），TTL 2小时 */
+    public static final String INTERVIEW_BATCHEVAL_DONE = "interview:batcheval:%d:batches:done";
+
+    /** 面试增量评估 — 批次并发锁（String, SETNX），TTL 30s */
+    public static final String INTERVIEW_BATCHEVAL_LOCK = "interview:batcheval:%d:lock";
+
+    /** 面试增量评估 — TTL */
+    public static final long INTERVIEW_BATCHEVAL_TTL = 7200L;
+
     // ========== 工具方法 ==========
 
     /** 格式化 Key：file:chunks:{md5} */
