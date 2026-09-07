@@ -46,13 +46,8 @@ public abstract class AbstractStreamConsumer<T> {
         log.info("[{}] 消费者启动: stream={}, group={}, consumer={}",
                 taskDisplayName(), streamKey(), groupName(), consumerName);
 
-        // 创建 Consumer Group（幂等，已存在则忽略）
-        try {
-            redisTemplate.opsForStream().createGroup(streamKey(), groupName());
-        } catch (Exception e) {
-            // BUSYGROUP → 已存在，忽略
-            log.debug("[{}] Consumer Group 已存在: {}", taskDisplayName(), e.getMessage());
-        }
+        // 确保 Consumer Group 存在（幂等：流不存在时先写占位消息再建组，见 ensureGroupExists）
+        ensureGroupExists();
 
         // 单线程执行器
         executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
@@ -73,6 +68,60 @@ public abstract class AbstractStreamConsumer<T> {
         if (executor != null) {
             executor.shutdown();
         }
+    }
+
+    // ============================================================
+    // Consumer Group 初始化（幂等建组 + NOGROUP 自恢复）
+    // ============================================================
+
+    /** 占位消息字段名：Stream 不存在时先 XADD 一条占位消息使流存在（等效 MKSTREAM），
+     *  占位消息不含业务字段，会被各 parsePayload 判为 null 后 ACK 跳过 */
+    private static final String BOOTSTRAP_FIELD = "__bootstrap";
+
+    /**
+     * 确保 Consumer Group 存在。
+     * <p>
+     * 原实现吞掉建组异常导致两个静默失败场景：
+     * 1. Stream key 尚不存在（首次启动，消息是第一个 XADD 才创建流的）→ XREADGROUP 永远 NOGROUP；
+     * 2. 运行中被 FLUSHDB 清掉 → 消费者永久空转。
+     * 现在：建组失败若不是 BUSYGROUP，先写占位消息保证流存在，再重试建组；仍失败才记录错误。
+     */
+    private void ensureGroupExists() {
+        try {
+            redisTemplate.opsForStream().createGroup(streamKey(), groupName());
+            log.info("[{}] Consumer Group 就绪: stream={}, group={}", taskDisplayName(), streamKey(), groupName());
+        } catch (Exception e) {
+            if (isRedisError(e, "BUSYGROUP")) {
+                // 组已存在，正常
+                log.debug("[{}] Consumer Group 已存在: {}", taskDisplayName(), e.getMessage());
+                return;
+            }
+            log.warn("[{}] 建组失败（{}），尝试先创建 Stream 再建组: stream={}, group={}",
+                    taskDisplayName(), e.getMessage(), streamKey(), groupName());
+            try {
+                // 流不存在时 createGroup 会报 NOGROUP/ERR —— XADD 一条占位消息即可创建流
+                redisTemplate.opsForStream().add(
+                        StreamRecords.mapBacked(Map.of(BOOTSTRAP_FIELD, "1")).withStreamKey(streamKey()));
+                redisTemplate.opsForStream().createGroup(streamKey(), groupName());
+                log.info("[{}] Consumer Group 就绪（含占位消息引导）: stream={}, group={}",
+                        taskDisplayName(), streamKey(), groupName());
+            } catch (Exception e2) {
+                if (!isRedisError(e2, "BUSYGROUP")) {
+                    log.error("[{}] Consumer Group 创建失败: stream={}, group={}, error={}",
+                            taskDisplayName(), streamKey(), groupName(), e2.getMessage());
+                }
+            }
+        }
+    }
+
+    /** 沿异常链查找 Redis 服务端错误码（BUSYGROUP/NOGROUP 等） */
+    private boolean isRedisError(Exception e, String code) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains(code)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ============================================================
@@ -99,6 +148,12 @@ public abstract class AbstractStreamConsumer<T> {
                     break;
                 }
                 log.error("[{}] 消费循环异常: {}", taskDisplayName(), e.getMessage(), e);
+                if (isRedisError(e, "NOGROUP")) {
+                    // 组被删（如 FLUSHDB）→ 幂等重建后继续消费，避免永久空转
+                    log.warn("[{}] 消费组缺失（NOGROUP），尝试重建: stream={}, group={}",
+                            taskDisplayName(), streamKey(), groupName());
+                    ensureGroupExists();
+                }
             }
         }
     }
