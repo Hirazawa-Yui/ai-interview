@@ -2,8 +2,14 @@
   <div>
     <h1 style="margin-bottom: 24px">🎯 模拟面试</h1>
 
+    <!-- ========== 续答加载中 ========== -->
+    <el-card v-if="resumeLoading" style="max-width: 700px; text-align: center; padding: 40px">
+      <el-progress :percentage="100" :indeterminate="true" :duration="2" />
+      <p style="margin-top: 16px; color: #6b7280">正在恢复面试记录...</p>
+    </el-card>
+
     <!-- ========== Phase 1: 面试设置 ========== -->
-    <el-card v-if="!sessionId" style="max-width: 700px">
+    <el-card v-if="!sessionId && !resumeLoading" style="max-width: 700px">
       <template #header><strong>面试设置</strong></template>
       <el-form :model="setupForm" label-width="100px">
         <el-form-item label="选择简历">
@@ -51,10 +57,15 @@
         <el-tag :type="allDone ? 'success' : 'warning'" size="large">
           {{ currentProgress }}/{{ totalQuestions }}
         </el-tag>
-        <span v-if="allDone && !showReport" style="color: #16a34a; font-weight: 500">
-          ⏳ 正在自动提交评估...
-        </span>
-        <el-button @click="resetChat" style="margin-left: auto">退出</el-button>
+        <template v-if="allDone && !showReport">
+          <span v-if="!resumeSuppressAuto" style="color: #16a34a; font-weight: 500">
+            ⏳ 正在自动提交评估...
+          </span>
+          <el-button v-else type="primary" :loading="evaluating" @click="submitEvaluation">
+            提交评估
+          </el-button>
+        </template>
+        <el-button @click="handleExit" style="margin-left: auto">退出</el-button>
       </div>
 
       <!-- 聊天区 -->
@@ -145,7 +156,7 @@
 
         <!-- 底部操作 -->
         <div style="margin-top: 20px; text-align: center; display: flex; gap: 12px; justify-content: center">
-          <el-button type="primary" @click="resetAll">🔄 重新面试</el-button>
+          <el-button type="primary" @click="handleExit">{{ resumeMode ? '返回记录' : '🔄 重新面试' }}</el-button>
         </div>
       </div>
     </div>
@@ -154,9 +165,13 @@
 
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { interviewApi } from '../api/interview'
 import { resumeApi } from '../api/resume'
+
+const route = useRoute()
+const router = useRouter()
 
 // ========== Phase 1: Setup ==========
 const setupForm = reactive({ resumeId: null, jdText: '', direction: '', questionCount: 8 })
@@ -172,9 +187,11 @@ const directionMap = {
 }
 const directionLabel = ref('')
 
-// 加载简历列表
+// 加载简历列表；带 ?session= 时进入续答模式（从面试记录页跳来）
 onMounted(async () => {
   try { resumes.value = await resumeApi.list() } catch { /* 空列表 */ }
+  const sid = route.query.session
+  if (sid) enterResume(Number(sid))
 })
 
 async function startInterview() {
@@ -188,6 +205,8 @@ async function startInterview() {
     const data = await interviewApi.create(
       setupForm.resumeId, setupForm.jdText, setupForm.direction, setupForm.questionCount
     )
+    resumeMode.value = false
+    resumeSuppressAuto.value = false
     sessionId.value = data.sessionId
     totalQuestions.value = data.questionCount
     directionLabel.value = directionMap[data.direction] || data.direction
@@ -218,6 +237,11 @@ const chatBox = ref(null)
 
 const currentProgress = ref(0)
 const allDone = ref(false)
+
+// ===== 续答模式（从面试记录页 ?session= 进入，T7） =====
+const resumeMode = ref(false) // 续答中：退出回记录列表而非新面试表单
+const resumeSuppressAuto = ref(false) // 续答进入的"已完成/失败"会话：不自动提交评估，等用户点按钮
+const resumeLoading = ref(false)
 
 // ===== 定时器集中管理（草稿防抖 / 自动提交 / 评估轮询） =====
 let draftKey = ''
@@ -308,6 +332,7 @@ async function doSubmitAnswer() {
 // 全部答完 → 延迟自动提交评估（存句柄 + 会话代次校验：1.5s 内退出/重开不误触）
 watch(allDone, (val) => {
   if (!val) return
+  if (resumeSuppressAuto.value) return // 续答进入的已完成会话：等用户点"提交评估"
   const epoch = sessionEpoch
   if (autoSubmitTimer) clearTimeout(autoSubmitTimer)
   autoSubmitTimer = setTimeout(() => {
@@ -320,6 +345,90 @@ function scrollChat() {
   nextTick(() => { if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight })
 }
 
+// ===== 续答：从 ?session= 恢复历史会话（T7） =====
+async function enterResume(id) {
+  if (resumeLoading.value) return // 防重入
+  clearAllTimers()
+  // 复位上一会话的界面态（可能正停在答题/报告视图）
+  showReport.value = false
+  loadingReport.value = false
+  reportData.value = null
+  reportAnswers.value = []
+  allDone.value = false
+  resumeMode.value = true
+  resumeLoading.value = true
+  try {
+    const d = await interviewApi.detail(id)
+    sessionId.value = d.id
+    totalQuestions.value = d.questionCount
+    directionLabel.value = directionMap[d.direction] || d.direction
+    currentProgress.value = d.currentQuestion || 0
+    draftKey = 'interview:draft:' + d.id
+    buildChatFromDetail(d)
+    dispatchByStatus(d.status)
+  } catch (e) {
+    ElMessage.error('加载面试失败: ' + (e.message || ''))
+    resetChat()
+    router.replace({ path: '/interview' }) // 去掉 query 回落 Phase1
+  } finally { resumeLoading.value = false }
+}
+
+// 由 questions + answers 重建聊天记录（已答 Q&A 对 + 未答的下一题）
+function buildChatFromDetail(d) {
+  const byNumber = new Map((d.questions || []).map(q => [q.questionNumber, q]))
+  const list = []
+  const answers = (d.answers || []).slice().sort((a, b) => a.questionNumber - b.questionNumber)
+  for (const a of answers) {
+    const q = byNumber.get(a.questionNumber)
+    list.push({
+      role: 'assistant',
+      content: '【第 ' + a.questionNumber + ' 题】' + (q ? q.questionText : a.questionText),
+      tags: q ? (q.tags || []) : [], questionNumber: a.questionNumber
+    })
+    list.push({ role: 'user', content: a.answerText })
+  }
+  chatMessages.value = list
+
+  // 下一题 = 已答数 + 1（find 防御，不依赖数组下标）
+  const cur = d.currentQuestion || answers.length
+  const nextQ = (d.questions || []).find(q => q.questionNumber === cur + 1)
+  if (nextQ) {
+    chatMessages.value.push({
+      role: 'assistant', content: '【第 ' + nextQ.questionNumber + ' 题】' + nextQ.questionText,
+      tags: nextQ.tags, questionNumber: nextQ.questionNumber
+    })
+    currentQuestionNumber.value = nextQ.questionNumber
+  } else {
+    currentQuestionNumber.value = cur
+  }
+}
+
+// 按会话状态分流：答题续 / 待评估只读 / 评估中轮询 / 已评估直接报告
+function dispatchByStatus(status) {
+  if (status === 'EVALUATED') {
+    showReport.value = true
+    loadingReport.value = true
+    resumeIntoReport()
+  } else if (status === 'EVALUATING') {
+    showReport.value = true
+    loadingReport.value = true
+    resumeIntoReport() // 探测一次：已终态直接出报告，仍在评估中则转轮询
+  } else if (status === 'COMPLETED' || status === 'FAILED') {
+    // 全答完但评估未完成/失败：只读态 + 手动"提交评估"（不自动，避免无声 POST）
+    allDone.value = true
+    resumeSuppressAuto.value = true
+    chatMessages.value.push({
+      role: 'system',
+      content: status === 'COMPLETED'
+        ? '✅ 已答完所有题目，请点击上方"提交评估"生成报告'
+        : '⚠️ 上次评估失败，可点击上方"提交评估"重试'
+    })
+  } else {
+    // IN_PROGRESS / CREATED：直接续答，并恢复该会话未发送的输入草稿
+    restoreDraft()
+  }
+}
+
 function resetChat() {
   clearAllTimers() // 含 pollTimer/autoSubmitTimer/draftTimer + 会话代次递增
   clearDraft()
@@ -330,6 +439,8 @@ function resetChat() {
   currentProgress.value = 0
   currentQuestionNumber.value = 0
   chatInput.value = '' // 防残留半截输入冒充新会话草稿
+  resumeMode.value = false
+  resumeSuppressAuto.value = false
 }
 
 // ========== Phase 3: Report ==========
@@ -353,6 +464,37 @@ async function submitEvaluation() {
   } finally { evaluating.value = false }
 }
 
+// 评估报告就绪：停止轮询、填报告并拉回答列表（轮询完成 / 续答探测共用）
+async function fillReport(data) {
+  stopPoll()
+  loadingReport.value = false
+  reportData.value = data
+  try {
+    const detail = await interviewApi.detail(sessionId.value)
+    reportAnswers.value = detail.answers || []
+  } catch { reportAnswers.value = [] }
+}
+
+// 评估失败/超时：退出报告态回"已答完待提交"视图（顶部按钮可重试）
+function backToRetry() {
+  stopPoll()
+  showReport.value = false
+  allDone.value = true
+  chatMessages.value.push({ role: 'system', content: '⚠️ 评估未完成，可点击上方"提交评估"重试' })
+}
+
+// 续答进入已评估/评估中的会话：先探测一次——已终态直接出报告，仍在评估转轮询（不重复 POST /evaluate）
+async function resumeIntoReport() {
+  try {
+    const data = await interviewApi.getEvaluation(sessionId.value)
+    if (data.sessionStatus === 'EVALUATED') { fillReport(data) }
+    else if (data.sessionStatus === 'FAILED') {
+      ElMessage.error('评估失败: ' + (data.error || '请稍后重试'))
+      backToRetry()
+    } else { startPolling() }
+  } catch { startPolling() }
+}
+
 function startPolling() {
   stopPoll()
   pollCount = 0
@@ -362,23 +504,13 @@ function startPolling() {
       const data = await interviewApi.getEvaluation(sessionId.value)
       if (data.sessionStatus === 'EVALUATED') {
         clearDraft()
-        stopPoll()
-        loadingReport.value = false
-        reportData.value = data
-
-        // 加载对应的回答列表
-        try {
-          const detail = await interviewApi.detail(sessionId.value)
-          reportAnswers.value = detail.answers || []
-        } catch { reportAnswers.value = [] }
+        fillReport(data)
       } else if (data.sessionStatus === 'FAILED') {
-        stopPoll()
-        loadingReport.value = false
         ElMessage.error('评估失败: ' + (data.error || '请稍后重试'))
+        backToRetry()
       } else if (pollCount >= MAX_POLL_COUNT) {
-        stopPoll()
-        loadingReport.value = false
-        ElMessage.error('评估超时（后端未在 2 分钟内完成），可在"面试记录"页重试评估')
+        ElMessage.error('评估超时（2 分钟未完成），可点击上方"提交评估"重试')
+        backToRetry()
       }
     } catch { /* 继续轮询 */ }
   }, 3000)
@@ -391,16 +523,32 @@ function scoreColor(score) {
   return '#f56c6c'
 }
 
-function resetAll() {
-  resetChat() // 已含 clearAllTimers + 清草稿与输入
+// 退出/重新面试统一出口：续答模式回记录列表（重进自动刷新状态），普通模式清表单留 Phase1
+function handleExit() {
+  const fromResume = resumeMode.value
+  resetChat() // 已含 clearAllTimers + 清草稿与输入 + 复位续答标志
   showReport.value = false
   reportData.value = null
   loadingReport.value = false
   reportAnswers.value = []
   evaluating.value = false
-  setupForm.jdText = ''
-  setupForm.direction = ''
+  if (fromResume) {
+    router.replace('/interviews')
+  } else {
+    setupForm.jdText = ''
+    setupForm.direction = ''
+  }
 }
+
+// 路由 query 兜底：新 ?session= 触发续答；侧栏重进 /interview（去掉 query）则复位回 Phase1
+watch(() => route.query.session, (v) => {
+  if (v && String(v) !== String(sessionId.value) && !resumeLoading.value) {
+    enterResume(Number(v))
+  } else if (!v && (sessionId.value || resumeMode.value)) {
+    resetChat()
+    showReport.value = false
+  }
+})
 
 // 卸载清理全部定时器（草稿防抖 / 自动提交 / 评估轮询）
 onBeforeUnmount(clearAllTimers)

@@ -27,9 +27,11 @@
       <el-table-column prop="createdAt" label="创建时间" min-width="160">
         <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button size="small" text type="primary" @click.stop="showDetail(row)">详情</el-button>
+          <el-button v-if="canResume(row.status)" size="small" text type="primary"
+            @click.stop="continueSession(row)">{{ continueLabel(row.status) }}</el-button>
           <el-button v-if="row.status === 'EVALUATED'" size="small" text type="success"
             @click.stop="viewReport(row)">报告</el-button>
           <el-button size="small" text type="danger" @click.stop="doDelete(row)">删除</el-button>
@@ -114,9 +116,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { interviewApi } from '../api/interview'
 
+const router = useRouter()
 const sessions = ref([])
 const loading = ref(false)
 const detailVisible = ref(false)
@@ -133,6 +137,19 @@ async function loadSessions() {
   try { sessions.value = await interviewApi.list() }
   catch { ElMessage.error('加载面试记录失败') }
   finally { loading.value = false }
+}
+
+// 继续面试（T7）：跳面试页 ?session= 恢复会话——IN_PROGRESS 续答 / COMPLETED 补提交评估 / FAILED 重试评估
+function continueSession(row) {
+  router.push({ path: '/interview', query: { session: row.id } })
+}
+function canResume(status) {
+  return ['CREATED', 'IN_PROGRESS', 'COMPLETED', 'FAILED'].includes(status)
+}
+function continueLabel(status) {
+  if (status === 'FAILED') return '重试评估'
+  if (status === 'COMPLETED') return '继续'
+  return '继续面试'
 }
 
 // 查看详情
