@@ -107,7 +107,7 @@
         <div v-if="isAnalyzing(detailData.analyzeStatus)" style="text-align: center; padding: 20px">
           <el-progress :percentage="100" :indeterminate="true" :duration="2" />
           <p style="color: #6b7280; margin-top: 8px">AI 正在分析中，请稍候...</p>
-          <el-button @click="pollCurrentDetail" :loading="polling">刷新</el-button>
+          <el-button @click="refreshDetail" :loading="polling">刷新</el-button>
         </div>
 
         <!-- 分析结果 -->
@@ -191,7 +191,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { resumeApi } from '../api/resume'
@@ -207,8 +207,30 @@ const resumeList = ref([])
 const detailVisible = ref(false)
 const detailData = ref(null)
 
+// ===== 详情轮询 / 列表延迟刷新 定时器句柄（防关弹窗/切页后后台继续请求） =====
+let detailPollTimer = null
+let refreshTimer = null
+
+function stopDetailPoll() {
+  if (detailPollTimer) { clearTimeout(detailPollTimer); detailPollTimer = null }
+}
+
+function scheduleDetailPoll() {
+  stopDetailPoll() // 只保留一条链
+  detailPollTimer = setTimeout(pollCurrentDetail, 3000)
+}
+
+function scheduleListRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer) // 防连续上传重复排期
+  refreshTimer = setTimeout(loadList, 5000)
+}
+
 // ========== 生命周期 ==========
 onMounted(() => loadList())
+onBeforeUnmount(() => {
+  stopDetailPoll()
+  if (refreshTimer) clearTimeout(refreshTimer)
+})
 
 // ========== 列表 ==========
 async function loadList() {
@@ -236,8 +258,8 @@ async function doUpload() {
     ElMessage.success('上传成功，AI 正在分析...')
     selectedFile.value = null
     loadList()
-    // 3秒后自动刷新列表看分析结果
-    setTimeout(loadList, 5000)
+    // 5秒后自动刷新列表看分析结果
+    scheduleListRefresh()
   } catch (e) {
     ElMessage.error('上传失败: ' + (e.message || '未知错误'))
   } finally {
@@ -252,7 +274,7 @@ async function showDetail(row) {
     detailVisible.value = true
     // 如果还在分析中，自动轮询
     if (isAnalyzing(detailData.value.analyzeStatus)) {
-      setTimeout(pollCurrentDetail, 3000)
+      scheduleDetailPoll()
     }
   } catch (e) {
     ElMessage.error('获取详情失败')
@@ -261,20 +283,32 @@ async function showDetail(row) {
 
 async function pollCurrentDetail() {
   if (!detailData.value?.id) return
+  if (polling.value) return // 上轮在途，跳过本轮（链上已有后续排期）
   polling.value = true
   try {
     detailData.value = await resumeApi.detail(detailData.value.id)
     if (!isAnalyzing(detailData.value.analyzeStatus)) {
+      stopDetailPoll()
       loadList() // 刷新列表中的状态
     } else {
-      setTimeout(pollCurrentDetail, 3000)
+      scheduleDetailPoll()
     }
   } catch (e) {
-    // ignore
+    // ignore（下次排期继续）
+    scheduleDetailPoll()
   } finally {
     polling.value = false
   }
 }
+
+// 手动刷新详情：立即查一轮并重排轮询链
+function refreshDetail() {
+  stopDetailPoll()
+  pollCurrentDetail()
+}
+
+// 关弹窗即停轮询（原实现关窗后仍在后台每 3s 请求直至状态翻转）
+watch(detailVisible, (v) => { if (!v) stopDetailPoll() })
 
 // ========== 删除 ==========
 async function doDelete(row) {
@@ -301,6 +335,7 @@ async function doReanalyze() {
   try {
     await resumeApi.reanalyze(detailData.value.id)
     ElMessage.success('已触发重新分析')
+    stopDetailPoll() // 清掉旧链再起新轮询，防双链
     pollCurrentDetail()
   } catch (e) {
     ElMessage.error('重分析失败')

@@ -135,17 +135,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { marked } from 'marked'
 import ChunkUploader from '../components/ChunkUploader.vue'
 import { knowledgeApi } from '../api/knowledge'
-
-// Markdown 渲染
-function renderMarkdown(text) {
-  if (!text) return ''
-  try { return marked.parse(text) } catch { return text }
-}
+import { ragChatApi } from '../api/rag-chat'
+import { renderMarkdown } from '../utils/markdown'
 
 const activeTab = ref('upload')
 
@@ -217,6 +212,7 @@ const chatMessages = ref([])
 const completedDocs = ref([])
 const chatBox = ref(null)
 const currentSessionId = ref(null)
+const chatAbortCtrl = ref(null) // 流式问答中断句柄（重置/卸载时 abort，防切页后仍在写气泡）
 
 async function loadCompletedDocs() {
   try { completedDocs.value = await knowledgeApi.list('COMPLETED', undefined, 'time') }
@@ -231,48 +227,35 @@ async function doChat() {
   const aiMsg = { role: 'assistant', content: '', streaming: true }
   chatMessages.value.push(aiMsg)
   chatLoading.value = true
-
-  const endpoint = currentSessionId.value
-    ? `/api/rag-chat/sessions/${currentSessionId.value}/messages/stream`
-    : '/api/knowledge/query/stream'
-  const body = currentSessionId.value
-    ? JSON.stringify({ question })
-    : JSON.stringify({ knowledgeBaseIds: chatKbIds.value, question })
+  chatAbortCtrl.value?.abort()
+  chatAbortCtrl.value = new AbortController()
 
   try {
-    const resp = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n'); buffer = lines.pop() || ''
-      for (const line of lines) {
-        const s = line.trim()
-        if (s.startsWith('data:')) aiMsg.content += s.substring(5).replace(/^ ?/, '')
-      }
-      scrollChat()
-    }
-    const rest = buffer.trim()
-    if (rest.startsWith('data:')) aiMsg.content += rest.substring(5).replace(/^ ?/, '')
-  } catch { aiMsg.content += '【查询失败】' }
+    await ragChatApi.streamChat({
+      sessionId: currentSessionId.value,
+      kbIds: chatKbIds.value,
+      question,
+      signal: chatAbortCtrl.value.signal,
+      onData: (chunk) => { aiMsg.content += chunk; scrollChat() }
+    })
+  } catch (e) {
+    if (e.name !== 'AbortError') aiMsg.content += '【查询失败：' + (e.message || '网络异常') + '】'
+  }
   finally { aiMsg.streaming = false; chatLoading.value = false; loadCompletedDocs() }
 }
 
 async function createChatSession() {
   if (chatKbIds.value.length === 0) { ElMessage.warning('请先选择知识库'); return }
   try {
-    const resp = await fetch('/api/rag-chat/sessions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kbIds: chatKbIds.value, title: chatKbIds.value.length + '个知识库对话' })
-    })
-    const data = await resp.json()
-    if (data.code === 200) { currentSessionId.value = data.data.id; ElMessage.success('会话已创建') }
+    const data = await ragChatApi.createSession(chatKbIds.value, chatKbIds.value.length + '个知识库对话')
+    currentSessionId.value = data.id
+    ElMessage.success('会话已创建')
   } catch { ElMessage.error('创建会话失败') }
 }
-function resetChat() { chatMessages.value = []; currentSessionId.value = null }
+function resetChat() {
+  chatAbortCtrl.value?.abort()
+  chatMessages.value = []; currentSessionId.value = null
+}
 
 function scrollChat() {
   nextTick(() => { if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight })
@@ -282,24 +265,19 @@ function scrollChat() {
 const sessionList = ref([])
 
 async function loadSessions() {
-  try {
-    const resp = await fetch('/api/rag-chat/sessions')
-    const data = await resp.json()
-    if (data.code === 200) sessionList.value = data.data
-  } catch { sessionList.value = [] }
+  try { sessionList.value = await ragChatApi.listSessions() }
+  catch { sessionList.value = [] }
 }
 
 async function openSession(row) {
   try {
-    const resp = await fetch(`/api/rag-chat/sessions/${row.id}`)
-    const data = await resp.json()
-    if (data.code !== 200) return
+    const data = await ragChatApi.sessionDetail(row.id)
 
     // 加载知识库选择
-    chatKbIds.value = data.data.kbIds || []
-    currentSessionId.value = data.data.id
+    chatKbIds.value = data.kbIds || []
+    currentSessionId.value = data.id
     // 恢复历史消息
-    chatMessages.value = (data.data.messages || []).map(m => ({
+    chatMessages.value = (data.messages || []).map(m => ({
       role: m.role, content: m.content, streaming: false
     }))
     activeTab.value = 'chat'
@@ -310,10 +288,12 @@ async function openSession(row) {
 async function doDeleteSession(row) {
   try {
     await ElMessageBox.confirm(`确定删除会话「${row.sessionTitle}」吗？`, '确认删除', { type: 'warning' })
-    await fetch(`/api/rag-chat/sessions/${row.id}`, { method: 'DELETE' })
+    await ragChatApi.deleteSession(row.id)
     ElMessage.success('已删除'); loadSessions()
   } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
+
+onBeforeUnmount(() => { chatAbortCtrl.value?.abort() })
 
 // ========== 工具 ==========
 function formatSize(bytes) {

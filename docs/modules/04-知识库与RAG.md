@@ -59,8 +59,9 @@
 - 配置键见 §2
 
 ## 6. 已知坑位
-- **前端 XSS**：AI 回复经 `marked` 渲染后直接 `v-html`，无 DOMPurify 消毒（AI 输出不可控场景有注入风险）。
-- **前端裸 fetch**：RAG/会话 5 个接口散在 KnowledgePage.vue 内，不走 axios 拦截器（无统一错误提示）。
+- ~~**前端 XSS**~~：✅ 已修（T8，2026-09-08）——AI 回复渲染改走 `utils/markdown.js`（marked.parse → DOMPurify.sanitize），注入文本（`<script>`/`<img onerror>`/`[x](javascript:)`）不执行。
+- ~~**前端裸 fetch**~~：✅ 已修（T8，2026-09-08）——RAG/会话 5 接口收敛至 `api/rag-chat.js`（会话 CRUD 走 axios 拦截器；SSE `streamChat` 在 api 层封装：resp.ok 检查取业务消息、onData 增量回调、AbortSignal 中断），页面层零裸 fetch；非 2xx 现显示【查询失败：业务消息】而非静默。
+- **（观察，2026-09-08 验收时发现，非 T8 引入）向量数据完整性**：vector_store 中 kb1 仅 2 行、kb2 878 行完整。kb1（RocketMQ 书）向量疑似历史缺失；kb2（算法书）中文问题（"快速排序"等）检索 0 命中拒答——疑似英文 chunk 与中文 query 跨语言低分被 minScore 过滤。真实 LLM 逐字流式当前无法在既有文档复现，**用户需上传有效中文文档复核前端流式渲染链路**。
 - ~~删除知识库不删向量~~：✅ 已修（B4，2026-09-08）——`delete()` 现同步调 `vectorService.deleteByKbId(id)` 清理 vector_store（同库同事务原子）；实测删 kb → vector_store 零残留。`deleteByKbId` 吞异常 warn 语义保留（best-effort）。
 - kb_ids 以 JSON 字符串存储，`parseKbIds` 失败返回空列表（静默）。
 - ~~上传事务内 XADD 竞态~~：✅ 已修（T15，2026-09-08）——`upload()` 向量化任务发送改 `TransactionSupport.afterCommit`（同 modules/03 简历与 docs/00 坑 #8）。

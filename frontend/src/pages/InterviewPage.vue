@@ -178,6 +178,7 @@ onMounted(async () => {
 })
 
 async function startInterview() {
+  clearAllTimers() // 防上个会话残留的延迟回调触发
   if (!setupForm.jdText || !setupForm.direction) {
     ElMessage.warning('请填写岗位JD并选择技术方向')
     return
@@ -218,9 +219,26 @@ const chatBox = ref(null)
 const currentProgress = ref(0)
 const allDone = ref(false)
 
-// ===== 输入草稿防丢失（localStorage） =====
+// ===== 定时器集中管理（草稿防抖 / 自动提交 / 评估轮询） =====
 let draftKey = ''
 let draftTimer = null
+let pollTimer = null
+let autoSubmitTimer = null
+let sessionEpoch = 0 // 会话代次：递增后旧会话的延迟回调全部作废（防退出竞态误触发评估）
+let pollCount = 0
+
+const MAX_POLL_COUNT = 40 // 评估轮询封顶 ≈2 分钟，防后端卡死永久 loading
+
+function clearAllTimers() {
+  if (draftTimer) { clearTimeout(draftTimer); draftTimer = null }
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  if (autoSubmitTimer) { clearTimeout(autoSubmitTimer); autoSubmitTimer = null }
+  sessionEpoch++
+}
+
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
 
 // 防抖自动保存：停止输入 1.5s 后保存
 watch(chatInput, (val) => {
@@ -287,9 +305,15 @@ async function doSubmitAnswer() {
   }
 }
 
-// 全部答完 → 自动提交评估
+// 全部答完 → 延迟自动提交评估（存句柄 + 会话代次校验：1.5s 内退出/重开不误触）
 watch(allDone, (val) => {
-  if (val) setTimeout(() => submitEvaluation(), 1500)
+  if (!val) return
+  const epoch = sessionEpoch
+  if (autoSubmitTimer) clearTimeout(autoSubmitTimer)
+  autoSubmitTimer = setTimeout(() => {
+    autoSubmitTimer = null
+    if (epoch === sessionEpoch) submitEvaluation()
+  }, 1500)
 })
 
 function scrollChat() {
@@ -297,6 +321,7 @@ function scrollChat() {
 }
 
 function resetChat() {
+  clearAllTimers() // 含 pollTimer/autoSubmitTimer/draftTimer + 会话代次递增
   clearDraft()
   draftKey = ''
   sessionId.value = null
@@ -304,6 +329,7 @@ function resetChat() {
   allDone.value = false
   currentProgress.value = 0
   currentQuestionNumber.value = 0
+  chatInput.value = '' // 防残留半截输入冒充新会话草稿
 }
 
 // ========== Phase 3: Report ==========
@@ -312,7 +338,6 @@ const evaluating = ref(false)
 const loadingReport = ref(false)
 const reportData = ref(null)
 const reportAnswers = ref([])
-let pollTimer = null
 
 async function submitEvaluation() {
   if (!sessionId.value) return
@@ -329,14 +354,15 @@ async function submitEvaluation() {
 }
 
 function startPolling() {
-  if (pollTimer) clearInterval(pollTimer)
+  stopPoll()
+  pollCount = 0
   pollTimer = setInterval(async () => {
+    pollCount++
     try {
       const data = await interviewApi.getEvaluation(sessionId.value)
       if (data.sessionStatus === 'EVALUATED') {
         clearDraft()
-        clearInterval(pollTimer)
-        pollTimer = null
+        stopPoll()
         loadingReport.value = false
         reportData.value = data
 
@@ -346,10 +372,13 @@ function startPolling() {
           reportAnswers.value = detail.answers || []
         } catch { reportAnswers.value = [] }
       } else if (data.sessionStatus === 'FAILED') {
-        clearInterval(pollTimer)
-        pollTimer = null
+        stopPoll()
         loadingReport.value = false
         ElMessage.error('评估失败: ' + (data.error || '请稍后重试'))
+      } else if (pollCount >= MAX_POLL_COUNT) {
+        stopPoll()
+        loadingReport.value = false
+        ElMessage.error('评估超时（后端未在 2 分钟内完成），可在"面试记录"页重试评估')
       }
     } catch { /* 继续轮询 */ }
   }, 3000)
@@ -363,17 +392,16 @@ function scoreColor(score) {
 }
 
 function resetAll() {
-  clearInterval(pollTimer)
-  pollTimer = null
-  resetChat()
+  resetChat() // 已含 clearAllTimers + 清草稿与输入
   showReport.value = false
   reportData.value = null
   loadingReport.value = false
   reportAnswers.value = []
+  evaluating.value = false
   setupForm.jdText = ''
   setupForm.direction = ''
 }
 
-// 清理轮询定时器
-onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
+// 卸载清理全部定时器（草稿防抖 / 自动提交 / 评估轮询）
+onBeforeUnmount(clearAllTimers)
 </script>
