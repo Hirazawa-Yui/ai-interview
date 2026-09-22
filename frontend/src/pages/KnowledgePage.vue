@@ -142,7 +142,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import ChunkUploader from '../components/ChunkUploader.vue'
 import { knowledgeApi } from '../api/knowledge'
 import { ragChatApi } from '../api/rag-chat'
-import { renderMarkdown } from '../utils/markdown'
+import { renderMarkdown as markdownToHtml } from '../utils/markdown'
+
+// T17 埋点：渲染函数加计数器（模板仍调 renderMarkdown，行为不变），用于统计一次问答触发了多少次全量重解析
+let renderCount = 0
+function renderMarkdown(text) { renderCount++; return markdownToHtml(text) }
 
 const activeTab = ref('upload')
 
@@ -232,18 +236,30 @@ async function doChat() {
   chatAbortCtrl.value?.abort()
   chatAbortCtrl.value = new AbortController()
 
+  // T17 埋点：首字延迟 / 总时长 / chunk 数 / 重渲染次数（仅 console，不影响行为）
+  const t0 = performance.now()
+  let tFirst = 0, chunks = 0
+  renderCount = 0
   try {
     await ragChatApi.streamChat({
       sessionId: currentSessionId.value,
       kbIds: chatKbIds.value,
       question,
       signal: chatAbortCtrl.value.signal,
-      onData: (chunk) => { aiMsg.content += chunk; scrollChat() }
+      onData: (chunk) => {
+        if (!chunks) tFirst = performance.now() - t0
+        chunks++
+        aiMsg.content += chunk
+        scrollChat()
+      }
     })
   } catch (e) {
     if (e.name !== 'AbortError') aiMsg.content += '【查询失败：' + (e.message || '网络异常') + '】'
   }
-  finally { aiMsg.streaming = false; chatLoading.value = false; loadCompletedDocs() }
+  finally {
+    console.log(`[RAG前端] 首字=${Math.round(tFirst)}ms 总=${Math.round(performance.now() - t0)}ms chunks=${chunks} 重渲染=${renderCount}次`)
+    aiMsg.streaming = false; chatLoading.value = false; loadCompletedDocs()
+  }
 }
 
 async function createChatSession() {

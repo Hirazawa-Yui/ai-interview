@@ -1,5 +1,6 @@
 package com.aiinterview.knowledge.service.impl;
 
+import com.aiinterview.common.StageWatch;
 import com.aiinterview.knowledge.dto.RagSessionDTO;
 import com.aiinterview.knowledge.entity.KnowledgeBase;
 import com.aiinterview.knowledge.entity.RagChatMessage;
@@ -100,6 +101,8 @@ public class RagChatServiceImpl implements IRagChatService {
     @Override
     @Transactional
     public Flux<String> sendMessage(Long sessionId, String question) {
+        // T17：多轮链路前置阶段的耗时（在 answerQuestionStream 的 [RAG耗时] 之前发生）
+        StageWatch watch = new StageWatch();
         RagChatSession session = sessionMapper.selectById(sessionId);
         if (session == null) throw new BusinessException(ErrorCode.KNOWLEDGE_BASE_NOT_FOUND, "会话不存在");
         List<Long> kbIds = parseKbIds(session.getKbIds());
@@ -121,9 +124,12 @@ public class RagChatServiceImpl implements IRagChatService {
         // 3. 更新会话时间
         session.setUpdatedAt(LocalDateTime.now());
         sessionMapper.updateById(session);
+        watch.mark("db");
 
         // 4. 加载历史消息
         List<Message> history = loadHistory(sessionId, aiOrder);
+        log.info("[RAG耗时-多轮前置] {} | sessionId={} 历史消息={}",
+                watch, sessionId, history.size());
 
         // 5. 流式调用 + 累积写入
         AtomicReference<String> accumulated = new AtomicReference<>("");

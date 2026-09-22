@@ -1,5 +1,6 @@
 package com.aiinterview.knowledge.service.impl;
 
+import com.aiinterview.common.StageWatch;
 import com.aiinterview.common.ai.PromptSecurityConstants;
 import com.aiinterview.knowledge.entity.KnowledgeBase;
 import com.aiinterview.knowledge.mapper.KnowledgeBaseMapper;
@@ -68,8 +69,12 @@ public class KbQueryServiceImpl implements IKbQueryService {
 
     @Override
     public Flux<String> answerQuestionStream(List<Long> kbIds, String question, List<Message> history) {
+        // T17：全链路分段计时（不改行为），末尾打一行 [RAG耗时]
+        StageWatch watch = new StageWatch();
+
         // 1. Query Rewrite
         String rewritten = rewriteEnabled ? rewriteQuestion(question, history) : question;
+        watch.mark("rewrite");
 
         // 2. 动态 topK + minScore
         int topK = resolveTopK(rewritten);
@@ -77,7 +82,9 @@ public class KbQueryServiceImpl implements IKbQueryService {
 
         // 3. 向量检索
         List<Document> docs = vectorService.similaritySearch(rewritten, kbIds, topK, minScore);
+        watch.mark("search");
         if (docs.isEmpty()) {
+            logTiming(watch, kbIds, question, 0, 0, topK, minScore);
             return Flux.just(NO_RESULT_MSG);
         }
 
@@ -91,15 +98,40 @@ public class KbQueryServiceImpl implements IKbQueryService {
 
         String sysPrompt = systemPrompt + PromptSecurityConstants.ANTI_INJECTION_INSTRUCTION;
         String usrPrompt = userPrompt.replace("{context}", safeContext).replace("{question}", safeQuestion);
+        watch.mark("prompt");
 
         // 5. SSE 流式输出 + 探测窗口
         Flux<String> rawStream = chatClient.prompt()
                 .system(sysPrompt)
                 .user(usrPrompt)
                 .stream()
-                .content();
+                .content()
+                .doOnNext(c -> watch.markOnce("llm首字"));
 
-        return applyProbeWindow(rawStream);
+        int hits = docs.size();
+        int ctxChars = context.length();
+        return applyProbeWindow(rawStream)
+                .doOnNext(c -> watch.markOnce("流首字"))
+                .doFinally(sig -> {
+                    watch.mark("生成");
+                    logTiming(watch, kbIds, question, hits, ctxChars, topK, minScore);
+                });
+    }
+
+    // ========== T17 耗时观测 ==========
+
+    /** 单行耗时日志：各段是"相对上一段"的增量，总= 是端到端墙钟（complete/error/cancel 都会打） */
+    private void logTiming(StageWatch watch, List<Long> kbIds, String question,
+                           int hits, int ctxChars, int topK, double minScore) {
+        log.info("[RAG耗时] {} | hits={} ctxChars={} topK={} minScore={} kbIds={} q=\"{}\"",
+                watch, hits, ctxChars, topK, minScore, kbIds, abbreviate(question));
+    }
+
+    /** 日志里只留问题前 30 字，避免长问题刷屏 */
+    private String abbreviate(String text) {
+        if (text == null) return "";
+        String flat = text.replaceAll("\\s+", " ");
+        return flat.length() <= 30 ? flat : flat.substring(0, 30) + "…";
     }
 
     // ========== Query Rewrite ==========

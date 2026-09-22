@@ -19,6 +19,7 @@
 - `knowledge/entity/KnowledgeBase.java`、`RagChatSession.java`（kb_ids 存 JSON 字符串）、`RagChatMessage.java`（role/messageOrder/completed）
 - `resources/prompts/kb-query-system.st` / `kb-query-user.st` / `kb-query-rewrite.st`
 - 配置：`application.yml` 的 `app.ai.rag.*`（rewrite 开关、max-history-chars 200、长短查询阈值、topK 20/12/8、minScore 0.18/0.28）
+- `common/StageWatch.java`（T17）— 请求级分段计时器，被上述两个 Impl 用于打单行耗时日志
 
 前端：`pages/KnowledgePage.vue`（4 Tab：上传/列表/RAG问答/历史会话）、`api/knowledge.js`（RAG/会话接口在页面内裸 fetch，未收敛）
 
@@ -52,6 +53,7 @@
 - **历史注入改写**：多轮时把最近历史（助手回复截断 200 字）拼进 rewrite prompt 解决"它/这个"指代。
 - 会话列表排序：isPinned DESC + updatedAt DESC；`getNextOrder` 用 last LIMIT 1。
 - **向量切分**：`TokenTextSplitter.withChunkSize(800)`（注意：代码中没有 100 重叠参数，PLAN 里的描述未落地）。
+- **耗时埋点（T17）**：问答每次请求在 `KbQueryServiceImpl` 打一行 `[RAG耗时]`，格式 `总=<墙钟> | rewrite/search/prompt/llm首字/流首字/生成=<各段增量>` + `hits`(命中块数) `ctxChars`(注入上下文字符数) `topK` `minScore` `kbIds` `q`(前 30 字)。分段含义：`llm首字`=LLM 第一个 token，`流首字`=经 120 字探测窗口后真正发给前端的第一个字（两者之差 = 探测窗攒字耗时），`生成`=首字到结束。空结果短路分支也会打（`hits=0`）。多轮链路的前置段另打一行 `[RAG耗时-多轮前置] … | db=<5 次 DB 往返> history=<取历史>`。前端 `KnowledgePage.vue` 结束时打 `[RAG前端] 首字/总/chunks/重渲染次数`（`renderMarkdown` 计数器）。
 
 ## 5. 数据
 - 表：`knowledge_bases`、`rag_chat_sessions`、`rag_chat_messages`、`vector_store`（Spring AI 自动建，HNSW/COSINE/1024 维，metadata 带 `kb_id`）
@@ -66,6 +68,9 @@
 - kb_ids 以 JSON 字符串存储，`parseKbIds` 失败返回空列表（静默）。
 - ~~上传事务内 XADD 竞态~~：✅ 已修（T15，2026-09-08）——`upload()` 向量化任务发送改 `TransactionSupport.afterCommit`（同 modules/03 简历与 docs/00 坑 #8）。
 - 会话历史消息 `LIMIT 11` 取 11 条过滤当前 user 消息后取 10 条——对消息数边界敏感，改动需小心。
+- **（T17 实测定位，2026-09-22）RAG 慢的主因不是检索，是模型在"思考"**：`qwen3.7-flash` 默认走思考模式，每次调用先产出完整 `reasoning_content` 思维链。实测基线（kb5）：总 32.0s/47.7s 中 **rewrite 10.1s/19.2s + llm首字 19.5s/23.3s**，而 embedding+检索只有 0.2–0.6s。直连对照：`hi`+`max_tokens=16` 默认 4.82s（带思维链），加 `"enable_thinking": false` 后 **0.58s**。**属跨模块问题**（出题/评估/简历分析走同一 ChatClient，一并变慢），详见 docs/00 坑位 #10。
+- **（T17 附带发现）`topK` 按"改写后"长度选取**（`KbQueryServiceImpl:75` 用的是 `rewritten`），把"≤4 字 → topK 20"的设计意图架空了：实测 `缓存穿透`(4 字) 被改写为 44 字后落到 topK 8，与"短查询多取候选"的初衷相反。
+- **（T17 附带发现）改写经常白跑**：实测 `Redis 的持久化方式 RDB 和 AOF 有什么区别？`（23 字，自带完整上下文）的改写结果与原文一字不差，却仍花掉 19.2s。`KbQueryServiceImpl:118` 对 >200 字的改写结果也是直接丢弃（白跑一趟）。
 
 ## 7. 验证要点
 1. 前端知识库 Tab 上传 PDF → 列表状态 PENDING→COMPLETED，chunkCount>0
@@ -73,3 +78,4 @@
 3. 问文档外的问题 → 返回"未检索到相关信息"固定文案
 4. 创建会话 → 多轮追问（用"它"指代上文）→ 验证 rewrite 日志与回答连续性 → 历史会话恢复
 5. 删除文档 → 重新上传同名文件 → 正常入库（MD5 不同则重建）
+6. 每次问答看后端控制台 `[RAG耗时]` 一行（各段耗时 + hits/ctxChars）与浏览器 Console `[RAG前端]` 一行（首字/总时长/重渲染次数）——这是性能回归的判断依据
