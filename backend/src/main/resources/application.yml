@@ -131,6 +131,10 @@ app:
 
     # RAG 检索配置
     rag:
+      # 分块（T19）：字符制，按句边界切分；overlap 为相邻块的重叠字符数（对齐句首，实际可能略大）
+      chunk:
+        size: 500                             # 每块最大字符数
+        overlap: 80                           # 相邻块重叠字符数（≈16%）
       rewrite:
         enabled: true                         # Query Rewrite：用LLM改写用户问题提升检索命中率
         max-history-chars: 200                # 改写时注入的助手回复最大字符数（截断）
