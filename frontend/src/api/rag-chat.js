@@ -26,6 +26,11 @@ export const ragChatApi = {
     return request.put(`/rag-chat/sessions/${id}/title`, { title }).then(r => r.data)
   },
 
+  /** 更换会话绑定的知识库（T23，后续提问按新集合检索） */
+  updateSessionKbs(id, kbIds) {
+    return request.put(`/rag-chat/sessions/${id}/kbs`, { kbIds }).then(r => r.data)
+  },
+
   /** 删除会话 */
   deleteSession(id) {
     return request.delete(`/rag-chat/sessions/${id}`).then(r => r.data)

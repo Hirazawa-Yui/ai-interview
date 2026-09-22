@@ -39,7 +39,6 @@
           <el-button @click="loadList" :loading="listLoading">刷新</el-button>
         </div>
         <el-table :data="docList" stripe v-loading="listLoading" @row-click="showDetail" highlight-current-row>
-          <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="kbName" label="名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="category" label="分类" width="100" />
           <el-table-column prop="fileSize" label="大小" width="90">
@@ -64,13 +63,18 @@
       <!-- ========== Tab3: RAG问答 ========== -->
       <el-tab-pane label="RAG问答" name="chat">
         <div style="display: flex; gap: 12px; margin-bottom: 12px; align-items: center">
-          <el-select v-model="chatKbIds" placeholder="选择知识库" multiple style="flex: 1">
+          <!-- 会话进行中改动选择会同步到会话（T23 onChatKbChange），后续提问立即按新集合检索 -->
+          <el-select v-model="chatKbIds" placeholder="选择知识库" multiple style="flex: 1"
+                     @change="onChatKbChange">
             <el-option v-for="d in completedDocs" :key="d.id" :label="d.kbName" :value="d.id" />
           </el-select>
-          <el-button type="success" @click="createChatSession" :disabled="chatKbIds.length===0">
-            {{ currentSessionId ? '会话#' + currentSessionId : '创建会话' }}
+          <!-- 会话名按钮 = 重命名当前会话；无会话时就是「创建会话」 -->
+          <el-button v-if="currentSessionId" @click="doRenameCurrentSession" title="点击重命名当前会话">
+            {{ shortTitle(currentSessionTitle) }}
           </el-button>
-          <el-button v-if="currentSessionId" @click="resetChat">重置</el-button>
+          <el-button type="success" @click="createChatSession" :disabled="chatKbIds.length===0">
+            {{ currentSessionId ? '新建会话' : '创建会话' }}
+          </el-button>
         </div>
 
         <div v-if="chatKbIds.length === 0" style="color: var(--nt-muted); text-align: center; padding: 40px">
@@ -102,10 +106,9 @@
       <!-- ========== Tab4: 历史会话 ========== -->
       <el-tab-pane label="历史会话" name="sessions">
         <el-table :data="sessionList" stripe @row-click="openSession" highlight-current-row>
-          <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="sessionTitle" label="标题" min-width="200" show-overflow-tooltip />
-          <el-table-column prop="kbIds" label="知识库" width="120">
-            <template #default="{ row }">{{ row.kbIds?.join(',') }}</template>
+          <el-table-column prop="kbIds" label="知识库" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ kbNamesOf(row.kbIds) }}</template>
           </el-table-column>
           <el-table-column prop="updatedAt" label="更新时间" width="170">
             <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
@@ -124,7 +127,6 @@
     <el-dialog v-model="detailVisible" title="文档详情" width="700px">
       <template v-if="detailData">
         <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="ID">{{ detailData.id }}</el-descriptions-item>
           <el-descriptions-item label="名称">{{ detailData.kbName }}</el-descriptions-item>
           <el-descriptions-item label="分类">{{ detailData.category || '-' }}</el-descriptions-item>
           <el-descriptions-item label="大小">{{ formatSize(detailData.fileSize) }}</el-descriptions-item>
@@ -139,7 +141,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ChunkUploader from '../components/ChunkUploader.vue'
 import { knowledgeApi } from '../api/knowledge'
@@ -171,7 +173,8 @@ const activeTab = ref('upload')
 function onTabChange(tab) {
   if (tab === 'list') loadList()
   if (tab === 'chat') loadCompletedDocs()
-  if (tab === 'sessions') loadSessions()
+  // T22：会话列表要显示知识库名称，而名称映射来自 completedDocs
+  if (tab === 'sessions') { loadSessions(); if (!completedDocs.value.length) loadCompletedDocs() }
 }
 onMounted(() => loadList())
 
@@ -235,6 +238,8 @@ const chatMessages = ref([])
 const completedDocs = ref([])
 const chatBox = ref(null)
 const currentSessionId = ref(null)
+const currentSessionTitle = ref('') // T22：工具栏显示会话名而不是「会话#id」
+const sessionKbIds = ref([])        // T23：会话当前**已落库**的知识库集合（同步失败时用它回滚选择框）
 const chatAbortCtrl = ref(null) // 流式问答中断句柄（重置/卸载时 abort，防切页后仍在写气泡）
 
 async function loadCompletedDocs() {
@@ -242,9 +247,45 @@ async function loadCompletedDocs() {
   catch { completedDocs.value = docList.value.filter(d => d.vectorStatus === 'COMPLETED') }
 }
 
+// T22：界面上不再出现裸 id——知识库一律显示名称。
+// 映射来源是页面已有的 completedDocs（问答选中框用的同一份列表）；查不到的 id（比如库已被删除）兜底显示 #id。
+const kbNameMap = computed(() => Object.fromEntries(completedDocs.value.map(d => [d.id, d.kbName])))
+function kbNamesOf(ids) {
+  if (!ids || !ids.length) return '-'
+  return ids.map(id => kbNameMap.value[id] || '#' + id).join('、')
+}
+/** 工具栏按钮用：长标题截断，避免把按钮撑破 */
+function shortTitle(t) {
+  if (!t) return '会话中'
+  return t.length > 14 ? t.slice(0, 14) + '…' : t
+}
+
+// T23：会话进行中改动知识库选择 → 同步到会话（后端 sendMessage 用的是会话存的 kb_ids，
+// 不同步的话这里改了也不会生效）。失败则把选择框回滚到已落库的集合，避免"以为生效了其实没变"。
+async function onChatKbChange(ids) {
+  if (!currentSessionId.value) return // 还没会话，等发问时随会话一起建
+  if (!ids.length) {           // 至少留一个，否则检索没有库可用
+    ElMessage.warning('至少保留一个知识库')
+    chatKbIds.value = [...sessionKbIds.value]
+    return
+  }
+  try {
+    await ragChatApi.updateSessionKbs(currentSessionId.value, ids)
+    sessionKbIds.value = [...ids]
+    const row = sessionList.value.find(s => s.id === currentSessionId.value)
+    if (row) row.kbIds = [...ids] // 「历史会话」列同步
+    ElMessage.success('已更新会话的知识库')
+  } catch {
+    ElMessage.error('更新知识库失败，已还原')
+    chatKbIds.value = [...sessionKbIds.value]
+  }
+}
+
 async function doChat() {
   if (!chatInput.value.trim() || chatKbIds.value.length === 0) return
   const question = chatInput.value.trim()
+  // T23：没有会话就自动建一个（默认名），保证每轮对话都自动保存
+  if (!currentSessionId.value && !(await ensureSession())) return
   chatInput.value = ''
   chatMessages.value.push({ role: 'user', content: question, streaming: false })
   chatMessages.value.push({ role: 'assistant', content: '', html: '', streaming: true })
@@ -283,31 +324,85 @@ async function doChat() {
   }
 }
 
-async function createChatSession() {
-  if (chatKbIds.value.length === 0) { ElMessage.warning('请先选择知识库'); return }
-  const defaultTitle = chatKbIds.value.length + '个知识库对话'
-  // T21：先让用户命名；留空或取消则用默认标题
-  let title = defaultTitle
+/**
+ * 弹框输入会话名。
+ * @returns 去空格后的名称；取消返回 null；allowEmpty 时留空返回 ''
+ */
+async function promptSessionTitle({ title, defaultValue = '', okText = '确定', allowEmpty = false }) {
   try {
-    const { value } = await ElMessageBox.prompt('给这个会话起个名字（留空用默认）', '新建会话', {
-      inputValue: defaultTitle,
-      inputValidator: (v) => (!v || v.trim().length <= 50 ? true : '不能超过 50 个字符'),
-      confirmButtonText: '创建',
+    const { value } = await ElMessageBox.prompt('输入会话名称（最多 50 字）', title, {
+      inputValue: defaultValue,
+      inputValidator: (v) => {
+        const t = (v || '').trim()
+        if (!t) return allowEmpty ? true : '名称不能为空'
+        return t.length <= 50 ? true : '不能超过 50 个字符'
+      },
+      confirmButtonText: okText,
       cancelButtonText: '取消'
     })
-    if (value && value.trim()) title = value.trim()
-  } catch { return } // 取消 = 不创建
+    return (value || '').trim()
+  } catch {
+    return null // 取消
+  }
+}
+
+/**
+ * T23：确保有一个会话——没有就自动建（默认名），让每轮对话都自动保存。
+ * 建会话失败返回 false，调用方直接中止（不退化到单次问答：那种回答不会落库，用户会更困惑）。
+ */
+async function ensureSession() {
+  if (currentSessionId.value) return true
+  const title = chatKbIds.value.length + '个知识库对话'
   try {
     const data = await ragChatApi.createSession(chatKbIds.value, title)
     currentSessionId.value = data.id
-    loadSessions() // 新建的会话立刻出现在「历史会话」里，不用切 Tab 才刷新
+    currentSessionTitle.value = title
+    sessionKbIds.value = [...chatKbIds.value]
+    loadSessions()
+    return true
+  } catch {
+    ElMessage.error('创建会话失败，请稍后重试')
+    return false
+  }
+}
+
+/** 新会话从空白开始：停掉在跑的流、清掉渲染定时器与消息列表 */
+function startFreshChat() {
+  chatAbortCtrl.value?.abort()
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
+  chatMessages.value = []
+}
+
+async function createChatSession() {
+  if (chatKbIds.value.length === 0) { ElMessage.warning('请先选择知识库'); return }
+  const defaultTitle = chatKbIds.value.length + '个知识库对话'
+  const title = await promptSessionTitle({
+    title: '新建会话', defaultValue: defaultTitle, okText: '创建', allowEmpty: true
+  })
+  if (title === null) return // 取消 = 不创建
+  try {
+    const data = await ragChatApi.createSession(chatKbIds.value, title || defaultTitle)
+    currentSessionId.value = data.id
+    currentSessionTitle.value = title || defaultTitle
+    sessionKbIds.value = [...chatKbIds.value]
+    startFreshChat() // 新会话不该还挂着上一个会话的对话
+    loadSessions()   // 新建的会话立刻出现在「历史会话」里，不用切 Tab 才刷新
     ElMessage.success('会话已创建')
   } catch { ElMessage.error('创建会话失败') }
 }
-function resetChat() {
-  chatAbortCtrl.value?.abort()
-  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
-  chatMessages.value = []; currentSessionId.value = null
+
+/** 点工具栏上的会话名 = 重命名当前会话（无会话时该按钮不渲染，这里兜底走创建） */
+async function doRenameCurrentSession() {
+  if (!currentSessionId.value) { createChatSession(); return }
+  const title = await promptSessionTitle({ title: '重命名会话', defaultValue: currentSessionTitle.value })
+  if (title === null) return
+  try {
+    await ragChatApi.renameSession(currentSessionId.value, title)
+    currentSessionTitle.value = title
+    const row = sessionList.value.find(s => s.id === currentSessionId.value)
+    if (row) row.sessionTitle = title // 「历史会话」里那行同步，不必重拉列表
+    ElMessage.success('已重命名')
+  } catch { ElMessage.error('重命名失败') }
 }
 
 function scrollChat() {
@@ -328,31 +423,28 @@ async function openSession(row) {
 
     // 加载知识库选择
     chatKbIds.value = data.kbIds || []
+    sessionKbIds.value = [...(data.kbIds || [])] // T23：会话已落库的知识库集合
     currentSessionId.value = data.id
+    currentSessionTitle.value = row.sessionTitle || ''
     // 恢复历史消息（html 一次算好，模板直接渲染，不必每次重渲染都重解析）
     chatMessages.value = (data.messages || []).map(m => ({
       role: m.role, content: m.content, html: m.role === 'user' ? '' : renderMarkdown(m.content), streaming: false
     }))
     activeTab.value = 'chat'
-    ElMessage.success('已恢复会话 #' + row.id)
+    ElMessage.success('已恢复会话「' + (row.sessionTitle || '未命名') + '」')
   } catch { ElMessage.error('加载会话失败') }
 }
 
 // T21：重命名。成功后就地改 row.sessionTitle，不重拉列表——重命名不刷 updatedAt，
 // 列表顺序本就不该变，重拉只会带来不必要的跳动。
 async function doRenameSession(row) {
-  let value
+  const title = await promptSessionTitle({ title: '重命名会话', defaultValue: row.sessionTitle || '' })
+  if (title === null) return
   try {
-    ({ value } = await ElMessageBox.prompt('输入新的会话名称', '重命名会话', {
-      inputValue: row.sessionTitle || '',
-      inputValidator: (v) => (v && v.trim() ? (v.trim().length <= 50 ? true : '不能超过 50 个字符') : '名称不能为空'),
-      confirmButtonText: '确定',
-      cancelButtonText: '取消'
-    }))
-  } catch { return } // 取消
-  try {
-    await ragChatApi.renameSession(row.id, value.trim())
-    row.sessionTitle = value.trim()
+    await ragChatApi.renameSession(row.id, title)
+    row.sessionTitle = title
+    // 若改的正是当前打开的会话，工具栏标题跟着变（T22：按钮显示的是会话名）
+    if (row.id === currentSessionId.value) currentSessionTitle.value = title
     ElMessage.success('已重命名')
   } catch { ElMessage.error('重命名失败') }
 }

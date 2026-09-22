@@ -21,5 +21,13 @@ public interface IRagChatService {
      */
     void renameSession(Long sessionId, String title);
 
+    /**
+     * 更换会话绑定的知识库（T23）。
+     * <p>同样**不动 updatedAt**（与 {@link #renameSession} 一致：该字段是"最后一次对话时间"+ 列表排序键）。
+     *
+     * @throws com.aiinterview.common.BusinessException 会话不存在、kbIds 为空、或其中某个知识库不存在
+     */
+    void updateSessionKbs(Long sessionId, List<Long> kbIds);
+
     Flux<String> sendMessage(Long sessionId, String question);
 }

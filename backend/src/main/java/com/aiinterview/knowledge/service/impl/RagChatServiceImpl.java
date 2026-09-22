@@ -124,6 +124,32 @@ public class RagChatServiceImpl implements IRagChatService {
     }
 
     @Override
+    public void updateSessionKbs(Long sessionId, List<Long> kbIds) {
+        if (kbIds == null || kbIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "至少选择一个知识库");
+        }
+        if (sessionMapper.selectById(sessionId) == null) {
+            throw new BusinessException(ErrorCode.KNOWLEDGE_BASE_NOT_FOUND, "会话不存在");
+        }
+        for (Long kbId : kbIds) {
+            if (kbMapper.selectById(kbId) == null) {
+                throw new BusinessException(ErrorCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库 " + kbId + " 不存在");
+            }
+        }
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(kbIds);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "知识库列表格式错误");
+        }
+        // 只 SET kb_ids 一列，理由同 renameSession：不碰 updatedAt
+        sessionMapper.update(null, new LambdaUpdateWrapper<RagChatSession>()
+                .set(RagChatSession::getKbIds, json)
+                .eq(RagChatSession::getId, sessionId));
+        log.info("会话更换知识库: id={}, kbIds={}", sessionId, kbIds);
+    }
+
+    @Override
     @Transactional
     public Flux<String> sendMessage(Long sessionId, String question) {
         // T17：多轮链路前置阶段的耗时（在 answerQuestionStream 的 [RAG耗时] 之前发生）

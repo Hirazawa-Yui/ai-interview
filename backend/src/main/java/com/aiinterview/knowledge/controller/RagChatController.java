@@ -3,6 +3,7 @@ package com.aiinterview.knowledge.controller;
 import com.aiinterview.knowledge.dto.KbQueryRequest;
 import com.aiinterview.knowledge.dto.RagRenameSessionRequest;
 import com.aiinterview.knowledge.dto.RagSessionDTO;
+import com.aiinterview.knowledge.dto.RagUpdateSessionKbsRequest;
 import com.aiinterview.common.Result;
 import com.aiinterview.knowledge.service.IKbQueryService;
 import com.aiinterview.knowledge.service.IRagChatService;
@@ -74,6 +75,15 @@ public class RagChatController {
         log.info("RAG会话重命名: id={}, title={}", id, req.getTitle());
         chatService.renameSession(id, req.getTitle());
         return Result.ok("标题已更新");
+    }
+
+    @Operation(summary = "会话更换知识库", description = "改会话绑定的知识库集合，后续提问按新集合检索；不改变 updatedAt")
+    @PutMapping("/api/rag-chat/sessions/{id}/kbs")
+    public Result<String> updateSessionKbs(@PathVariable Long id,
+                                           @Valid @RequestBody RagUpdateSessionKbsRequest req) {
+        log.info("RAG会话更换知识库: id={}, kbIds={}", id, req.getKbIds());
+        chatService.updateSessionKbs(id, req.getKbIds());
+        return Result.ok("知识库已更新");
     }
 
     @Operation(summary = "SSE多轮对话", description = "在已有会话中发送消息，返回流式回答")

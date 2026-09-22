@@ -55,7 +55,9 @@
 - **历史注入改写**：多轮时把最近历史（助手回复截断 200 字）拼进 rewrite prompt 解决"它/这个"指代。
 - 会话列表排序：isPinned DESC + updatedAt DESC；`getNextOrder` 用 last LIMIT 1。
 - **会话重命名（T21）**：`PUT /api/rag-chat/sessions/{id}/title`，`title` 去空格后非空、≤50 字（DB 列 `VARCHAR(200)` 只是硬上限，50 是产品上限，避免超长撞 DB 约束变成 500）。**只 set `session_title` 一列、不碰 `updated_at`**：该字段语义是"最后一次对话时间"且是列表排序键，刷它会让旧会话跳到列表顶部、「更新时间」列显示"刚刚"。因此实现用 `LambdaUpdateWrapper.set(...)` 而**不是 `updateById`**——本仓库没有 `MetaObjectHandler`，`updateById` 会把读到的整行快照（含 updatedAt）写回，与并发 `sendMessage` 抢写，可能把时间改小导致排序倒退。会话不存在时抛 `BusinessException(KNOWLEDGE_BASE_NOT_FOUND, "会话不存在")`，与 `getSessionDetail`/`sendMessage` 一致（会话借用知识库的 6xxx 错误码，是既有瑕疵，未新增 ErrorCode）。
-- **创建会话（T21 起）**：前端先弹框命名（留空/取消则用默认「N个知识库对话」），创建后立即刷新会话列表。
+- **会话工具栏按钮语义（T22 定稿）**：无会话时是「创建会话」；有会话时左边按钮显示**会话名**、点击即**重命名当前会话**，右边「新建会话」建新会话并清空当前对话。原「重置」按钮已移除——它只是解除会话绑定（后续提问退回单次问答接口），语义不直观且与"新建会话"混淆。
+- **会话自动保存（T23）**：前端 `doChat` 在提问前调 `ensureSession()`——没有会话就用默认名（`N个知识库对话`）自动建一个，**每轮对话都自动落库**，不再需要用户先手动创建（对齐主流对话产品的习惯）。建会话失败则中止提问并提示，**不退化到单次问答接口**（那种回答不落库，反而更让人困惑）。副作用：前端已不再调用 `POST /api/knowledge/query/stream`，该单次问答接口目前只有 Swagger/curl 可达。
+- **会话知识库动态绑定（T23）**：前端选择框 `@change` 调 `PUT /api/rag-chat/sessions/{id}/kbs` 落库；后端 `sendMessage` 一直用的是**会话里存的** `kb_ids`（不看请求体），所以不落库的话前端怎么改都不生效。失败时前端把选择框**回滚**到已落库的集合并提示，避免"以为生效了其实没变"。至少保留 1 个知识库。
 - **向量切分（T19 起）**：自研 `OverlapTextSplitter(chunk.size=500, chunk.overlap=80)`，**字符制**。规则：① 按句末标点（。！？；!?; 与换行）切原子句，标点随前句；② 超长原子句硬切成 500 片段；③ 贪心装箱到 ≤500 字符；④ 下一块从"上一块尾部累计 ≥80 字符的**整句**处"开始 → **重叠对齐句首，不从半句中间切**；⑤ 文末若剩下的内容全在上一块重叠区里则直接收尾（防重复尾块）。
   - **为什么自研**：Spring AI 2.0.0-M4 的 `TokenTextSplitter` builder 根本没有 overlap 参数（javap 实测），且它的 chunkSize 单位是 **token 不是字符**——旧配置 `withChunkSize(800)` 在中文下实际切出平均 1120 字符/块的巨块（实测 kb2：878 块 / 均值 1120 / 最大 2717），既无重叠又让上层 prompt 臃肿。
   - 单元测试 `OverlapSplitterTest`（9 项）：块长上限、相邻块重叠 ≥ overlap、重叠区不被标点截断、不丢字、短文本单块、超长句硬切、空/空白输入、overlap=0 退化、**无重复尾块**。
