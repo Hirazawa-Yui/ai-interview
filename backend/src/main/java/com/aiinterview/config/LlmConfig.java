@@ -20,6 +20,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.util.Map;
+
 /**
  * LLM 配置（单Provider，OpenAI兼容接口）
  * <p>
@@ -47,6 +49,10 @@ public class LlmConfig {
 
     @Value("${app.ai.llm.embedding-model}")
     private String embeddingModel;
+
+    /** 思考模式开关（T18）：qwen3 系列默认先产出完整思维链再作答 */
+    @Value("${app.ai.llm.enable-thinking:false}")
+    private boolean enableThinking;
 
     /**
      * OpenAI兼容的 API 客户端（Builder模式 — Spring AI 2.0 API）
@@ -78,10 +84,17 @@ public class LlmConfig {
     @Primary
     @Lazy
     public ChatModel chatModel(OpenAiApi openAiApi) {
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
+        OpenAiChatOptions.Builder optionsBuilder = OpenAiChatOptions.builder()
                 .model(model)
-                .temperature(0.2)  // 面试场景需要稳定输出，温度不宜太高
-                .build();
+                .temperature(0.2);  // 面试场景需要稳定输出，温度不宜太高
+
+        // 关思考模式（T18，默认关）：qwen3 系列默认先产出完整 reasoning_content 思维链再作答，
+        // 实测同样一次调用（"hi"，max_tokens=16）默认 4.82s、关闭后 0.58s。开启时会让 RAG 改写与
+        // 作答、面试出题/评估、简历分析全线多花 1~30s。需要模型"想清楚"时可把开关置 true。
+        if (!enableThinking) {
+            optionsBuilder.extraBody(Map.of("enable_thinking", false));
+        }
+        OpenAiChatOptions options = optionsBuilder.build();
 
         return new OpenAiChatModel(
                 openAiApi,

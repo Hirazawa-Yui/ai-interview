@@ -68,7 +68,8 @@
 - kb_ids 以 JSON 字符串存储，`parseKbIds` 失败返回空列表（静默）。
 - ~~上传事务内 XADD 竞态~~：✅ 已修（T15，2026-09-08）——`upload()` 向量化任务发送改 `TransactionSupport.afterCommit`（同 modules/03 简历与 docs/00 坑 #8）。
 - 会话历史消息 `LIMIT 11` 取 11 条过滤当前 user 消息后取 10 条——对消息数边界敏感，改动需小心。
-- **（T17 实测定位，2026-09-22）RAG 慢的主因不是检索，是模型在"思考"**：`qwen3.7-flash` 默认走思考模式，每次调用先产出完整 `reasoning_content` 思维链。实测基线（kb5）：总 32.0s/47.7s 中 **rewrite 10.1s/19.2s + llm首字 19.5s/23.3s**，而 embedding+检索只有 0.2–0.6s。直连对照：`hi`+`max_tokens=16` 默认 4.82s（带思维链），加 `"enable_thinking": false` 后 **0.58s**。**属跨模块问题**（出题/评估/简历分析走同一 ChatClient，一并变慢），详见 docs/00 坑位 #10。
+- ~~**RAG 慢的主因不是检索，是模型在"思考"**~~：✅ 已修（T18，2026-09-22）——`qwen3.7-flash` 默认走思考模式（每次调用先产出完整 `reasoning_content` 思维链），T17 埋点实测：总 32.0s/47.7s 里 rewrite 10.1s/19.2s、llm首字 19.5s/23.3s，而 embedding+检索只有 0.2–0.6s。修复 = `LlmConfig` 注入 `extraBody(enable_thinking=false)`，开关 `app.ai.llm.enable-thinking`（默认 false）。**修复后同一问题 7.8s / 5.8s（4–8 倍）**：rewrite 0.46s/0.67s、llm首字 2.4s/0.59s，答案反而更完整（响应体 1125B → 2122B）。属跨模块修复（出题/评估/简历分析走同一 ChatClient 一并受益，出题冒烟 6.0s/5 题正常），详见 docs/00 坑位 #10。
+- **（T18 后的新瓶颈，T20 靶子）**：`生成` 3.5s（≈50%，随答案长度）> `流首字` 0.85s（120 字探测窗口的攒字等待，降到 60 字可省一半）> `llm首字` 0.6–2.4s > `search` 0.2–0.4s。另：同一答案被切成 **104 个 SSE 分片**，前端每片都全量重解析 markdown（`[RAG前端] 重渲染=` 待浏览器实测）。
 - **（T17 附带发现）`topK` 按"改写后"长度选取**（`KbQueryServiceImpl:75` 用的是 `rewritten`），把"≤4 字 → topK 20"的设计意图架空了：实测 `缓存穿透`(4 字) 被改写为 44 字后落到 topK 8，与"短查询多取候选"的初衷相反。
 - **（T17 附带发现）改写经常白跑**：实测 `Redis 的持久化方式 RDB 和 AOF 有什么区别？`（23 字，自带完整上下文）的改写结果与原文一字不差，却仍花掉 19.2s。`KbQueryServiceImpl:118` 对 >200 字的改写结果也是直接丢弃（白跑一趟）。
 
