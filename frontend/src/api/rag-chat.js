@@ -1,4 +1,5 @@
 import request from './request'
+import { createSseParser } from '../utils/sse'
 
 /**
  * RAG 多轮会话 + SSE 流式问答（T8 起从 KnowledgePage 裸 fetch 收敛至此模块）
@@ -57,22 +58,18 @@ export const ragChatApi = {
       }
       if (!resp.body) throw new Error('无法读取响应流')
 
+      // T20：按 SSE 规范解析（同一事件的多个 data: 行要用 \n 拼接后再派发，
+      // 否则分片内换行会丢失 → markdown 渲染成一整段）
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      const parser = createSseParser(onData)
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          const s = line.trim()
-          if (s.startsWith('data:')) onData(s.substring(5).replace(/^ ?/, ''))
-        }
+        parser.push(decoder.decode(value, { stream: true }))
       }
-      const rest = buffer.trim()
-      if (rest.startsWith('data:')) onData(rest.substring(5).replace(/^ ?/, ''))
+      parser.push(decoder.decode()) // 冲刷解码器里可能残留的多字节字符
+      parser.end()
     })
   }
 }

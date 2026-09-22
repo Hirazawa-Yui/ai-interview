@@ -86,7 +86,8 @@
                 color: msg.role === 'user' ? '#fff' : 'var(--nt-charcoal)' }">
                 <!-- 用户消息纯文本，AI消息渲染Markdown -->
                 <template v-if="msg.role === 'user'">{{ msg.content }}</template>
-                <div v-else class="markdown-body" v-html="renderMarkdown(msg.content)" />
+                <!-- T20：渲染节流后的 HTML（见 scheduleRender），不再每次重渲染都重解析整段 -->
+                <div v-else class="markdown-body" v-html="msg.html" />
                 <span v-if="msg.streaming" style="color: var(--nt-primary); font-size: 12px">▌</span>
               </div>
             </div>
@@ -144,9 +145,24 @@ import { knowledgeApi } from '../api/knowledge'
 import { ragChatApi } from '../api/rag-chat'
 import { renderMarkdown as markdownToHtml } from '../utils/markdown'
 
-// T17 埋点：渲染函数加计数器（模板仍调 renderMarkdown，行为不变），用于统计一次问答触发了多少次全量重解析
+// T17 埋点：渲染函数加计数器（行为不变），用于统计一次问答触发了多少次全量重解析
 let renderCount = 0
 function renderMarkdown(text) { renderCount++; return markdownToHtml(text) }
+
+// T20：流式期间的内容节流渲染。
+// 一个回答会被切成 100+ 个 SSE 分片，若每片都重解析一遍整段 markdown（O(n²)），
+// 除了费 CPU，还会让未闭合的 ** / 代码围栏先按字面闪一下。
+// 做法：content 实时累积，html 最多每 80ms 重算一次，回答结束时立即补算一次。
+const RENDER_INTERVAL = 80
+let renderTimer = null
+function scheduleRender(msg) {
+  if (renderTimer) return
+  renderTimer = setTimeout(() => { renderTimer = null; msg.html = renderMarkdown(msg.content) }, RENDER_INTERVAL)
+}
+function flushRender(msg) {
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
+  msg.html = renderMarkdown(msg.content)
+}
 
 const activeTab = ref('upload')
 
@@ -230,8 +246,10 @@ async function doChat() {
   const question = chatInput.value.trim()
   chatInput.value = ''
   chatMessages.value.push({ role: 'user', content: question, streaming: false })
-  const aiMsg = { role: 'assistant', content: '', streaming: true }
-  chatMessages.value.push(aiMsg)
+  chatMessages.value.push({ role: 'assistant', content: '', html: '', streaming: true })
+  // T20：必须取回数组里的**响应式代理**再改。直接改 push 进去的裸对象会绕过 reactive 的 set 陷阱，
+  // 流式期间不触发重渲染（旧写法就是这个毛病：回答最后一整坨才出现）。
+  const aiMsg = chatMessages.value[chatMessages.value.length - 1]
   chatLoading.value = true
   chatAbortCtrl.value?.abort()
   chatAbortCtrl.value = new AbortController()
@@ -250,6 +268,7 @@ async function doChat() {
         if (!chunks) tFirst = performance.now() - t0
         chunks++
         aiMsg.content += chunk
+        scheduleRender(aiMsg)
         scrollChat()
       }
     })
@@ -257,6 +276,7 @@ async function doChat() {
     if (e.name !== 'AbortError') aiMsg.content += '【查询失败：' + (e.message || '网络异常') + '】'
   }
   finally {
+    flushRender(aiMsg) // 结束时补算最后一次，确保内容完整
     console.log(`[RAG前端] 首字=${Math.round(tFirst)}ms 总=${Math.round(performance.now() - t0)}ms chunks=${chunks} 重渲染=${renderCount}次`)
     aiMsg.streaming = false; chatLoading.value = false; loadCompletedDocs()
   }
@@ -272,6 +292,7 @@ async function createChatSession() {
 }
 function resetChat() {
   chatAbortCtrl.value?.abort()
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
   chatMessages.value = []; currentSessionId.value = null
 }
 
@@ -294,9 +315,9 @@ async function openSession(row) {
     // 加载知识库选择
     chatKbIds.value = data.kbIds || []
     currentSessionId.value = data.id
-    // 恢复历史消息
+    // 恢复历史消息（html 一次算好，模板直接渲染，不必每次重渲染都重解析）
     chatMessages.value = (data.messages || []).map(m => ({
-      role: m.role, content: m.content, streaming: false
+      role: m.role, content: m.content, html: m.role === 'user' ? '' : renderMarkdown(m.content), streaming: false
     }))
     activeTab.value = 'chat'
     ElMessage.success('已恢复会话 #' + row.id)
@@ -311,7 +332,10 @@ async function doDeleteSession(row) {
   } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
-onBeforeUnmount(() => { chatAbortCtrl.value?.abort() })
+onBeforeUnmount(() => {
+  chatAbortCtrl.value?.abort()
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null } // T20：清掉节流渲染定时器
+})
 
 // ========== 工具 ==========
 function formatSize(bytes) {
