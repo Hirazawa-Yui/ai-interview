@@ -1,6 +1,7 @@
 package com.aiinterview.knowledge.controller;
 
 import com.aiinterview.knowledge.dto.KbQueryRequest;
+import com.aiinterview.knowledge.dto.RagRenameSessionRequest;
 import com.aiinterview.knowledge.dto.RagSessionDTO;
 import com.aiinterview.common.Result;
 import com.aiinterview.knowledge.service.IKbQueryService;
@@ -8,6 +9,7 @@ import com.aiinterview.knowledge.service.IRagChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -63,6 +65,15 @@ public class RagChatController {
         log.info("RAG会话删除: id={}", id);
         chatService.deleteSession(id);
         return Result.ok("删除成功");
+    }
+
+    @Operation(summary = "会话重命名", description = "仅修改标题；不改变 updatedAt，列表排序与「更新时间」列不受影响")
+    @PutMapping("/api/rag-chat/sessions/{id}/title")
+    public Result<String> renameSession(@PathVariable Long id,
+                                        @Valid @RequestBody RagRenameSessionRequest req) {
+        log.info("RAG会话重命名: id={}, title={}", id, req.getTitle());
+        chatService.renameSession(id, req.getTitle());
+        return Result.ok("标题已更新");
     }
 
     @Operation(summary = "SSE多轮对话", description = "在已有会话中发送消息，返回流式回答")

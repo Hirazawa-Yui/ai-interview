@@ -10,7 +10,7 @@
 ## 2. 涉及文件
 后端：
 - `knowledge/controller/KnowledgeBaseController.java` — 7 端点（upload/list/detail/delete/category/revectorize）
-- `knowledge/controller/RagChatController.java` — 6 端点（SSE 单次问答 + 会话 CRUD + SSE 多轮）
+- `knowledge/controller/RagChatController.java` — 7 端点（SSE 单次问答 + 会话 CRUD + **会话重命名 T21** + SSE 多轮）
 - `knowledge/service/impl/KnowledgeBaseServiceImpl.java` — 入库编排：OSS 下载 → 按后缀分流解析（pdf/doc/docx 走 Tika，其余按 UTF-8 文本）→ MD5 去重 → XADD
 - `knowledge/splitter/OverlapTextSplitter.java` — **自研字符制重叠分块器（T19）**：按句边界切 + 贪心装箱到 `chunk.size` + 相邻块重叠 `chunk.overlap` 字符（对齐句首）
 - `knowledge/service/impl/KbVectorServiceImpl.java` — OverlapTextSplitter 切分 → 删旧向量（JdbcTemplate `DELETE FROM vector_store WHERE metadata->>'kb_id'=?`）→ 每批 ≤10 嵌入入库；相似度检索（filter 表达式 + fallback 本地过滤）
@@ -54,6 +54,8 @@
 - **向量检索 fallback**：Spring AI 的 filter 表达式对 pgvector 兼容性偶发问题，失败降级为无过滤检索+本地过滤。
 - **历史注入改写**：多轮时把最近历史（助手回复截断 200 字）拼进 rewrite prompt 解决"它/这个"指代。
 - 会话列表排序：isPinned DESC + updatedAt DESC；`getNextOrder` 用 last LIMIT 1。
+- **会话重命名（T21）**：`PUT /api/rag-chat/sessions/{id}/title`，`title` 去空格后非空、≤50 字（DB 列 `VARCHAR(200)` 只是硬上限，50 是产品上限，避免超长撞 DB 约束变成 500）。**只 set `session_title` 一列、不碰 `updated_at`**：该字段语义是"最后一次对话时间"且是列表排序键，刷它会让旧会话跳到列表顶部、「更新时间」列显示"刚刚"。因此实现用 `LambdaUpdateWrapper.set(...)` 而**不是 `updateById`**——本仓库没有 `MetaObjectHandler`，`updateById` 会把读到的整行快照（含 updatedAt）写回，与并发 `sendMessage` 抢写，可能把时间改小导致排序倒退。会话不存在时抛 `BusinessException(KNOWLEDGE_BASE_NOT_FOUND, "会话不存在")`，与 `getSessionDetail`/`sendMessage` 一致（会话借用知识库的 6xxx 错误码，是既有瑕疵，未新增 ErrorCode）。
+- **创建会话（T21 起）**：前端先弹框命名（留空/取消则用默认「N个知识库对话」），创建后立即刷新会话列表。
 - **向量切分（T19 起）**：自研 `OverlapTextSplitter(chunk.size=500, chunk.overlap=80)`，**字符制**。规则：① 按句末标点（。！？；!?; 与换行）切原子句，标点随前句；② 超长原子句硬切成 500 片段；③ 贪心装箱到 ≤500 字符；④ 下一块从"上一块尾部累计 ≥80 字符的**整句**处"开始 → **重叠对齐句首，不从半句中间切**；⑤ 文末若剩下的内容全在上一块重叠区里则直接收尾（防重复尾块）。
   - **为什么自研**：Spring AI 2.0.0-M4 的 `TokenTextSplitter` builder 根本没有 overlap 参数（javap 实测），且它的 chunkSize 单位是 **token 不是字符**——旧配置 `withChunkSize(800)` 在中文下实际切出平均 1120 字符/块的巨块（实测 kb2：878 块 / 均值 1120 / 最大 2717），既无重叠又让上层 prompt 臃肿。
   - 单元测试 `OverlapSplitterTest`（9 项）：块长上限、相邻块重叠 ≥ overlap、重叠区不被标点截断、不丢字、短文本单块、超长句硬切、空/空白输入、overlap=0 退化、**无重复尾块**。
@@ -84,6 +86,7 @@
 1. 前端知识库 Tab 上传 PDF → 列表状态 PENDING→COMPLETED，chunkCount>0
 2. Swagger `POST /api/knowledge/query/stream`（curl -N 看 SSE 逐字输出）→ 问题命中文档内容
 3. 问文档外的问题 → 返回"未检索到相关信息"固定文案
-4. 创建会话 → 多轮追问（用"它"指代上文）→ 验证 rewrite 日志与回答连续性 → 历史会话恢复
-5. 删除文档 → 重新上传同名文件 → 正常入库（MD5 不同则重建）
-6. 每次问答看后端控制台 `[RAG耗时]` 一行（各段耗时 + hits/ctxChars）与浏览器 Console `[RAG前端]` 一行（首字/总时长/重渲染次数）——这是性能回归的判断依据
+4. 创建会话（弹框可命名，留空用默认）→ 多轮追问（用"它"指代上文）→ 验证 rewrite 日志与回答连续性 → 历史会话恢复
+5. 会话重命名（T21 回归点）：列表点「重命名」→ 标题即时变化，且**该行在列表中的位置不变、「更新时间」列的值也不变**；空标题/超 50 字给业务提示而非 500
+6. 删除文档 → 重新上传同名文件 → 正常入库（MD5 不同则重建）
+7. 每次问答看后端控制台 `[RAG耗时]` 一行（各段耗时 + hits/ctxChars）与浏览器 Console `[RAG前端]` 一行（首字/总时长/重渲染次数）——这是性能回归的判断依据

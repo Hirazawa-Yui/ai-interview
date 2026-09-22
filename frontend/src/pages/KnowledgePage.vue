@@ -110,8 +110,9 @@
           <el-table-column prop="updatedAt" label="更新时间" width="170">
             <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="80">
+          <el-table-column label="操作" width="140">
             <template #default="{ row }">
+              <el-button size="small" text type="primary" @click.stop="doRenameSession(row)">重命名</el-button>
               <el-button size="small" text type="danger" @click.stop="doDeleteSession(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -284,9 +285,22 @@ async function doChat() {
 
 async function createChatSession() {
   if (chatKbIds.value.length === 0) { ElMessage.warning('请先选择知识库'); return }
+  const defaultTitle = chatKbIds.value.length + '个知识库对话'
+  // T21：先让用户命名；留空或取消则用默认标题
+  let title = defaultTitle
   try {
-    const data = await ragChatApi.createSession(chatKbIds.value, chatKbIds.value.length + '个知识库对话')
+    const { value } = await ElMessageBox.prompt('给这个会话起个名字（留空用默认）', '新建会话', {
+      inputValue: defaultTitle,
+      inputValidator: (v) => (!v || v.trim().length <= 50 ? true : '不能超过 50 个字符'),
+      confirmButtonText: '创建',
+      cancelButtonText: '取消'
+    })
+    if (value && value.trim()) title = value.trim()
+  } catch { return } // 取消 = 不创建
+  try {
+    const data = await ragChatApi.createSession(chatKbIds.value, title)
     currentSessionId.value = data.id
+    loadSessions() // 新建的会话立刻出现在「历史会话」里，不用切 Tab 才刷新
     ElMessage.success('会话已创建')
   } catch { ElMessage.error('创建会话失败') }
 }
@@ -322,6 +336,25 @@ async function openSession(row) {
     activeTab.value = 'chat'
     ElMessage.success('已恢复会话 #' + row.id)
   } catch { ElMessage.error('加载会话失败') }
+}
+
+// T21：重命名。成功后就地改 row.sessionTitle，不重拉列表——重命名不刷 updatedAt，
+// 列表顺序本就不该变，重拉只会带来不必要的跳动。
+async function doRenameSession(row) {
+  let value
+  try {
+    ({ value } = await ElMessageBox.prompt('输入新的会话名称', '重命名会话', {
+      inputValue: row.sessionTitle || '',
+      inputValidator: (v) => (v && v.trim() ? (v.trim().length <= 50 ? true : '不能超过 50 个字符') : '名称不能为空'),
+      confirmButtonText: '确定',
+      cancelButtonText: '取消'
+    }))
+  } catch { return } // 取消
+  try {
+    await ragChatApi.renameSession(row.id, value.trim())
+    row.sessionTitle = value.trim()
+    ElMessage.success('已重命名')
+  } catch { ElMessage.error('重命名失败') }
 }
 
 async function doDeleteSession(row) {

@@ -21,6 +21,11 @@ export const ragChatApi = {
     return request.get(`/rag-chat/sessions/${id}`).then(r => r.data)
   },
 
+  /** 重命名会话（T21，仅改标题，不影响列表排序） */
+  renameSession(id, title) {
+    return request.put(`/rag-chat/sessions/${id}/title`, { title }).then(r => r.data)
+  },
+
   /** 删除会话 */
   deleteSession(id) {
     return request.delete(`/rag-chat/sessions/${id}`).then(r => r.data)

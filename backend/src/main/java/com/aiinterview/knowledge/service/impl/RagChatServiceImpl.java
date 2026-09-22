@@ -13,6 +13,7 @@ import com.aiinterview.knowledge.mapper.RagChatSessionMapper;
 import com.aiinterview.knowledge.service.IKbQueryService;
 import com.aiinterview.knowledge.service.IRagChatService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,9 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 @RequiredArgsConstructor
 public class RagChatServiceImpl implements IRagChatService {
+
+    /** 标题产品上限（T21）；DB 列是 VARCHAR(200)，见 RagRenameSessionRequest 注释 */
+    private static final int MAX_TITLE_LENGTH = 50;
 
     private final RagChatSessionMapper sessionMapper;
     private final RagChatMessageMapper messageMapper;
@@ -96,6 +100,27 @@ public class RagChatServiceImpl implements IRagChatService {
         messageMapper.delete(new LambdaQueryWrapper<RagChatMessage>()
                 .eq(RagChatMessage::getSessionId, sessionId));
         sessionMapper.deleteById(sessionId);
+    }
+
+    @Override
+    public void renameSession(Long sessionId, String title) {
+        if (title == null || title.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "会话标题不能为空");
+        }
+        String newTitle = title.trim();
+        if (newTitle.length() > MAX_TITLE_LENGTH) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "会话标题不能超过 " + MAX_TITLE_LENGTH + " 个字符");
+        }
+        if (sessionMapper.selectById(sessionId) == null) {
+            throw new BusinessException(ErrorCode.KNOWLEDGE_BASE_NOT_FOUND, "会话不存在");
+        }
+        // 只 SET 标题一列：不能用 updateById —— 本仓库没有 MetaObjectHandler，
+        // 它会把读到的整行快照（含 updatedAt）写回，与并发的 sendMessage 抢写，
+        // 可能把"最后对话时间"改小导致列表排序倒退。
+        sessionMapper.update(null, new LambdaUpdateWrapper<RagChatSession>()
+                .set(RagChatSession::getSessionTitle, newTitle)
+                .eq(RagChatSession::getId, sessionId));
+        log.info("会话重命名: id={}, title={}", sessionId, newTitle);
     }
 
     @Override
