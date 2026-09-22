@@ -61,7 +61,7 @@
             <el-tag v-if="row.latestScore != null" :type="scoreType(row.latestScore)" effect="dark">
               {{ row.latestScore }}
             </el-tag>
-            <span v-else style="color: #9ca3af">—</span>
+            <span v-else style="color: var(--nt-muted)">—</span>
           </template>
         </el-table-column>
         <el-table-column prop="analyzeStatus" label="状态" width="110">
@@ -96,7 +96,7 @@
             <el-tag :type="statusType(detailData.analyzeStatus)" size="small">
               {{ statusLabel(detailData.analyzeStatus) }}
             </el-tag>
-            <span v-if="detailData.analyzeError" style="color: #f56c6c; margin-left: 8px; font-size: 12px">
+            <span v-if="detailData.analyzeError" style="color: var(--nt-error); margin-left: 8px; font-size: 12px">
               {{ detailData.analyzeError }}
             </span>
           </el-descriptions-item>
@@ -106,7 +106,7 @@
         <!-- 分析中 loading -->
         <div v-if="isAnalyzing(detailData.analyzeStatus)" style="text-align: center; padding: 20px">
           <el-progress :percentage="100" :indeterminate="true" :duration="2" />
-          <p style="color: #6b7280; margin-top: 8px">AI 正在分析中，请稍候...</p>
+          <p style="color: var(--nt-slate); margin-top: 8px">AI 正在分析中，请稍候...</p>
           <el-button @click="refreshDetail" :loading="polling">刷新</el-button>
         </div>
 
@@ -131,7 +131,7 @@
               <div v-if="a.strengthsJson" style="margin-bottom: 12px">
                 <h4>✅ 优势</h4>
                 <ul style="padding-left: 20px">
-                  <li v-for="(s, i) in parseJson(a.strengthsJson)" :key="i" style="margin-bottom: 4px; color: #16a34a">{{ s }}</li>
+                  <li v-for="(s, i) in parseJson(a.strengthsJson)" :key="i" style="margin-bottom: 4px; color: var(--nt-success)">{{ s }}</li>
                 </ul>
               </div>
 
@@ -156,7 +156,7 @@
                 </el-table>
               </div>
 
-              <div style="color: #9ca3af; font-size: 12px; margin-top: 8px">
+              <div style="color: var(--nt-muted); font-size: 12px; margin-top: 8px">
                 分析时间：{{ formatTime(a.analyzedAt) }}
               </div>
             </el-card>
@@ -174,7 +174,7 @@
         <!-- 文本预览 -->
         <el-collapse style="margin-top: 16px">
           <el-collapse-item title="📝 简历解析文本">
-            <div style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; background: #f9fafb; padding: 12px; border-radius: 4px; font-size: 13px; line-height: 1.8">
+            <div style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; background: var(--nt-surface-soft); padding: 12px; border-radius: 4px; font-size: 13px; line-height: 1.8">
               {{ detailData.parsedText || '(无文本)' }}
             </div>
           </el-collapse-item>
@@ -372,9 +372,9 @@ function scoreType(s) {
 }
 
 function scoreColor(s) {
-  if (s >= 80) return '#67c23a'
-  if (s >= 60) return '#e6a23c'
-  return '#f56c6c'
+  if (s >= 80) return '#1aae39' // --nt-success
+  if (s >= 60) return '#dd5b00' // --nt-warning
+  return '#e03131' // --nt-error
 }
 
 function isAnalyzing(s) {

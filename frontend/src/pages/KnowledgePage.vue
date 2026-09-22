@@ -73,23 +73,25 @@
           <el-button v-if="currentSessionId" @click="resetChat">重置</el-button>
         </div>
 
-        <div v-if="chatKbIds.length === 0" style="color: #9ca3af; text-align: center; padding: 40px">
+        <div v-if="chatKbIds.length === 0" style="color: var(--nt-muted); text-align: center; padding: 40px">
           请先选择至少一个已完成向量化的知识库
         </div>
 
-        <div v-else style="border: 1px solid #e5e7eb; border-radius: 8px; height: 500px; display: flex; flex-direction: column">
+        <div v-else style="border: 1px solid var(--nt-hairline); border-radius: 8px; height: 500px; display: flex; flex-direction: column">
           <div ref="chatBox" style="flex: 1; overflow-y: auto; padding: 16px">
             <div v-for="(msg, i) in chatMessages" :key="i" :style="{ marginBottom: '12px', textAlign: msg.role === 'user' ? 'right' : 'left' }">
               <div :style="{ display: 'inline-block', maxWidth: '80%', padding: '10px 14px', borderRadius: '8px',
-                background: msg.role === 'user' ? '#3b82f6' : '#f3f4f6', color: msg.role === 'user' ? '#fff' : '#1f2937' }">
+                background: msg.role === 'user' ? 'var(--nt-primary)' : 'var(--nt-canvas)',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--nt-hairline)',
+                color: msg.role === 'user' ? '#fff' : 'var(--nt-charcoal)' }">
                 <!-- 用户消息纯文本，AI消息渲染Markdown -->
                 <template v-if="msg.role === 'user'">{{ msg.content }}</template>
                 <div v-else class="markdown-body" v-html="renderMarkdown(msg.content)" />
-                <span v-if="msg.streaming" style="color: #60a5fa; font-size: 12px">▌</span>
+                <span v-if="msg.streaming" style="color: var(--nt-primary); font-size: 12px">▌</span>
               </div>
             </div>
           </div>
-          <div style="border-top: 1px solid #e5e7eb; padding: 12px; display: flex; gap: 8px">
+          <div style="border-top: 1px solid var(--nt-hairline); padding: 12px; display: flex; gap: 8px">
             <el-input v-model="chatInput" placeholder="输入问题..." @keyup.enter="doChat" :disabled="chatLoading" />
             <el-button type="primary" @click="doChat" :loading="chatLoading">发送</el-button>
           </div>
@@ -313,10 +315,10 @@ function statusLabel(s) { return { PENDING: '排队中', PROCESSING: '处理中'
 .markdown-body :deep(p) { margin: 4px 0; }
 .markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 18px; margin: 4px 0; }
 .markdown-body :deep(li) { margin: 2px 0; }
-.markdown-body :deep(code) { background: #e5e7eb; padding: 1px 4px; border-radius: 3px; font-size: 13px; }
-.markdown-body :deep(pre) { background: #1f2937; color: #f3f4f6; padding: 10px; border-radius: 6px; overflow-x: auto; }
+.markdown-body :deep(code) { background: var(--nt-surface); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+.markdown-body :deep(pre) { background: #1f2937; color: #f3f4f6; padding: 10px; border-radius: 6px; overflow-x: auto; } /* 深色代码块保留为阅读强调（Notion 浅底为 spec 偏差取舍） */
 .markdown-body :deep(pre code) { background: none; padding: 0; }
-.markdown-body :deep(blockquote) { border-left: 3px solid #d1d5db; padding-left: 12px; color: #6b7280; margin: 6px 0; }
+.markdown-body :deep(blockquote) { border-left: 3px solid var(--nt-hairline-strong); padding-left: 12px; color: var(--nt-slate); margin: 6px 0; }
 .markdown-body :deep(table) { border-collapse: collapse; margin: 6px 0; }
-.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid #d1d5db; padding: 4px 8px; font-size: 13px; }
+.markdown-body :deep(th), .markdown-body :deep(td) { border: 1px solid var(--nt-hairline-strong); padding: 4px 8px; font-size: 13px; }
 </style>

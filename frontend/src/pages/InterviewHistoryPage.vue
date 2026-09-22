@@ -60,8 +60,8 @@
         <el-collapse v-if="detailData.answers && detailData.answers.length">
           <el-collapse-item v-for="a in detailData.answers" :key="a.questionNumber"
             :title="'第' + a.questionNumber + '题'">
-            <p style="color: #6b7280; font-size: 13px; margin-bottom: 4px"><strong>题目：</strong>{{ a.questionText }}</p>
-            <p style="background: #f3f4f6; padding: 8px; border-radius: 4px; font-size: 13px; white-space: pre-wrap">
+            <p style="color: var(--nt-slate); font-size: 13px; margin-bottom: 4px"><strong>题目：</strong>{{ a.questionText }}</p>
+            <p style="background: var(--nt-surface); padding: 8px; border-radius: 4px; font-size: 13px; white-space: pre-wrap">
               <strong>回答：</strong>{{ a.answerText }}
             </p>
           </el-collapse-item>
@@ -81,18 +81,18 @@
     <el-dialog v-model="reportVisible" title="评估报告" width="800px" destroy-on-close>
       <div v-if="reportLoading" style="text-align: center; padding: 40px">
         <el-progress :percentage="100" :indeterminate="true" />
-        <p style="margin-top: 16px; color: #6b7280">加载中...</p>
+        <p style="margin-top: 16px; color: var(--nt-slate)">加载中...</p>
       </div>
       <div v-else-if="reportData">
         <div style="text-align: center; margin-bottom: 20px">
           <el-progress type="dashboard" :percentage="reportData.overallScore || 0"
             :color="scoreColor(reportData.overallScore)" :stroke-width="12" />
-          <p style="margin-top: 8px; color: #6b7280">{{ reportData.summary || '暂无综合评价' }}</p>
+          <p style="margin-top: 8px; color: var(--nt-slate)">{{ reportData.summary || '暂无综合评价' }}</p>
         </div>
         <el-collapse v-if="reportData.perQuestion && reportData.perQuestion.length">
           <el-collapse-item v-for="(q, i) in reportData.perQuestion" :key="i"
             :title="'第' + (q.questionNumber || (i+1)) + '题 — ' + (q.score || 0) + '分'">
-            <p style="color: #6b7280">{{ q.comment }}</p>
+            <p style="color: var(--nt-slate)">{{ q.comment }}</p>
           </el-collapse-item>
         </el-collapse>
         <div v-if="reportData.strengths && reportData.strengths.length" style="margin-top: 12px">
@@ -103,10 +103,10 @@
         <div v-if="reportData.improvements && reportData.improvements.length" style="margin-top: 12px">
           <strong>📝 改进建议：</strong>
           <div v-for="(imp, i) in reportData.improvements" :key="i"
-            style="margin: 8px 0; padding: 8px; background: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 4px">
+            style="margin: 8px 0; padding: 8px; background: var(--nt-tint-yellow); border-left: 3px solid var(--nt-warning); border-radius: 4px">
             <el-tag size="small" type="warning">{{ imp.category }}</el-tag>
             <p style="margin: 4px 0; font-size: 13px"><strong>问题：</strong>{{ imp.issue }}</p>
-            <p style="margin: 0; font-size: 13px; color: #059669"><strong>建议：</strong>{{ imp.suggestion }}</p>
+            <p style="margin: 0; font-size: 13px; color: var(--nt-success)"><strong>建议：</strong>{{ imp.suggestion }}</p>
           </div>
         </div>
       </div>
@@ -193,9 +193,9 @@ function statusLabel(s) {
 }
 function formatTime(t) { return t ? t.replace('T', ' ').substring(0, 19) : '' }
 function scoreColor(s) {
-  if (!s) return '#909399'
-  if (s >= 80) return '#67c23a'
-  if (s >= 60) return '#e6a23c'
-  return '#f56c6c'
+  if (!s) return '#c8c4be' // 占位灰（--nt-hairline-strong）
+  if (s >= 80) return '#1aae39' // --nt-success
+  if (s >= 60) return '#dd5b00' // --nt-warning
+  return '#e03131' // --nt-error
 }
 </script>

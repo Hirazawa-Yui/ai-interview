@@ -1,0 +1,53 @@
+/* ==========================================================================
+   Notion 风格设计 token（T16，2026-09-08）
+   来源：docs/design/DESIGN.md（Notion 品牌 spec）产品化适配——浅色应用风
+   本文件只定义 --nt-* 原始 token，不写任何 --el-* 与组件规则；
+   Element Plus 变量映射见 el-plus-overrides.css，页面内联样式引用 var(--nt-*)
+   ========================================================================== */
+:root {
+  /* ---- 品牌主色（紫） ---- */
+  --nt-primary: #5645d4;
+  --nt-primary-pressed: #4534b3;
+  --nt-primary-deep: #3a2a99;
+
+  /* ---- 文字阶（黑→灰） ---- */
+  --nt-ink: #1a1a1a;
+  --nt-charcoal: #37352f;
+  --nt-slate: #5d5b54;
+  --nt-steel: #787671;
+  --nt-stone: #a4a097;
+  --nt-muted: #bbb8b1;
+
+  /* ---- 表面 / 边框 ---- */
+  --nt-canvas: #ffffff;
+  --nt-surface: #f6f5f4;
+  --nt-surface-soft: #fafaf9;
+  --nt-hairline: #e5e3df;
+  --nt-hairline-soft: #ede9e4;
+  --nt-hairline-strong: #c8c4be;
+
+  /* ---- 语义色 ---- */
+  --nt-success: #1aae39;
+  --nt-warning: #dd5b00;
+  --nt-error: #e03131;
+
+  /* ---- 粉彩（低饱和点缀底） ---- */
+  --nt-lavender: #e6e0f5;
+  --nt-tint-yellow: #fef7d6;
+
+  /* ---- 圆角 ---- */
+  --nt-radius-sm: 6px;
+  --nt-radius-md: 8px;
+  --nt-radius-lg: 12px;
+
+  /* ---- 阴影（Elevation 0-2 + modal，Notion spec） ---- */
+  --nt-shadow-0: none;
+  --nt-shadow-1: 0 1px 2px rgba(15, 15, 15, 0.04);
+  --nt-shadow-2: 0 4px 12px rgba(15, 15, 15, 0.08);
+  --nt-shadow-modal: 0 16px 48px -8px rgba(15, 15, 15, 0.16);
+
+  /* ---- 字体（Inter 不做自托管/外链，系统栈近似 Notion Sans 人文几何） ---- */
+  --nt-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Helvetica, Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}

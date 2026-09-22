@@ -49,7 +49,7 @@
           striped
           striped-flow
         />
-        <p style="color: #6b7280; margin-top: 8px; text-align: center">
+        <p style="color: var(--nt-slate); margin-top: 8px; text-align: center">
           已上传 {{ uploadState.uploadedChunks.length }} / {{ uploadState.totalChunks }} 个分片
           <template v-if="uploadState.paused">（已暂停）</template>
           <template v-if="uploading">（上传中...）</template>

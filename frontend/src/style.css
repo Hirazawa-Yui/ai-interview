@@ -1,3 +1,4 @@
+/* 全局基础层（reset + 字体 + 页面底色 + 标题排版），token 见 styles/notion-tokens.css */
 * {
   margin: 0;
   padding: 0;
@@ -5,9 +6,19 @@
 }
 
 body {
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--nt-font, -apple-system, 'Segoe UI', 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif);
+  background: var(--nt-surface-soft, #fafaf9);
+  color: var(--nt-charcoal, #37352f);
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
   height: 100vh;
+}
+
+/* 页面一级标题统一：26px / 600 / 负字距（Notion 标题排版，免逐页改） */
+h1 {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.25px;
 }

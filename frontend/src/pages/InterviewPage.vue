@@ -5,7 +5,7 @@
     <!-- ========== 续答加载中 ========== -->
     <el-card v-if="resumeLoading" style="max-width: 700px; text-align: center; padding: 40px">
       <el-progress :percentage="100" :indeterminate="true" :duration="2" />
-      <p style="margin-top: 16px; color: #6b7280">正在恢复面试记录...</p>
+      <p style="margin-top: 16px; color: var(--nt-slate)">正在恢复面试记录...</p>
     </el-card>
 
     <!-- ========== Phase 1: 面试设置 ========== -->
@@ -58,7 +58,7 @@
           {{ currentProgress }}/{{ totalQuestions }}
         </el-tag>
         <template v-if="allDone && !showReport">
-          <span v-if="!resumeSuppressAuto" style="color: #16a34a; font-weight: 500">
+          <span v-if="!resumeSuppressAuto" style="color: var(--nt-success); font-weight: 500">
             ⏳ 正在自动提交评估...
           </span>
           <el-button v-else type="primary" :loading="evaluating" @click="submitEvaluation">
@@ -69,14 +69,15 @@
       </div>
 
       <!-- 聊天区 -->
-      <div style="border: 1px solid #e5e7eb; border-radius: 12px; height: 500px; display: flex; flex-direction: column; background: #fafafa; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06)">
+      <div style="border: 1px solid var(--nt-hairline); border-radius: 12px; height: 500px; display: flex; flex-direction: column; background: var(--nt-canvas); overflow: hidden; box-shadow: var(--nt-shadow-1)">
         <div ref="chatBox" style="flex: 1; overflow-y: auto; padding: 20px">
           <div v-for="(msg, i) in chatMessages" :key="i"
             :style="{ marginBottom: '16px', display: 'flex', flexDirection: 'column', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }">
             <div :style="{ maxWidth: '82%', padding: '12px 16px', borderRadius: '12px',
-              background: msg.role === 'user' ? '#3b82f6' : msg.role === 'system' ? '#fef3c7' : '#fff',
-              color: msg.role === 'user' ? '#fff' : '#1f2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              boxShadow: '0 1px 2px rgba(0,0,0,.06)', lineHeight: '1.6', fontSize: '14px' }">
+              background: msg.role === 'user' ? 'var(--nt-primary)' : msg.role === 'system' ? 'var(--nt-tint-yellow)' : 'var(--nt-canvas)',
+              border: msg.role === 'user' ? 'none' : '1px solid var(--nt-hairline)',
+              color: msg.role === 'user' ? '#fff' : 'var(--nt-charcoal)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+              lineHeight: '1.6', fontSize: '14px' }">
               {{ msg.content }}
               <div v-if="msg.tags && msg.tags.length" style="margin-top: 8px">
                 <el-tag v-for="t in msg.tags" :key="t" size="small" effect="plain" round style="margin-right: 4px">{{ t }}</el-tag>
@@ -85,7 +86,7 @@
           </div>
         </div>
         <!-- 输入区 -->
-        <div style="border-top: 1px solid #e5e7eb; padding: 12px; display: flex; gap: 8px; align-items: flex-end">
+        <div style="border-top: 1px solid var(--nt-hairline); padding: 12px; display: flex; gap: 8px; align-items: flex-end">
           <el-input v-model="chatInput" type="textarea" :rows="3" :maxlength="5000" show-word-limit
             :placeholder="allDone ? '已完成全部题目' : '输入你的回答...（Ctrl+Enter 发送）'"
             @keyup.ctrl.enter="doSubmitAnswer" :disabled="allDone || submitting"
@@ -103,7 +104,7 @@
       <!-- 加载中 -->
       <el-card v-if="loadingReport" style="text-align: center; padding: 60px">
         <el-progress :percentage="100" :indeterminate="true" :duration="3" />
-        <p style="margin-top: 20px; color: #6b7280; font-size: 16px">AI正在评估您的面试表现...</p>
+        <p style="margin-top: 20px; color: var(--nt-slate); font-size: 16px">AI正在评估您的面试表现...</p>
       </el-card>
 
       <!-- 报告内容 -->
@@ -123,11 +124,11 @@
           <el-collapse>
             <el-collapse-item v-for="(q, i) in reportData.perQuestion" :key="i"
               :title="'第' + (q.questionNumber || (i+1)) + '题 — ' + (q.score || 0) + '分'">
-              <p style="color: #6b7280; margin-bottom: 8px">{{ q.comment }}</p>
+              <p style="color: var(--nt-slate); margin-bottom: 8px">{{ q.comment }}</p>
               <!-- 查找对应回答 -->
               <p v-for="a in reportAnswers" :key="a.questionNumber"
                 v-show="a.questionNumber === (q.questionNumber || i+1)"
-                style="background:#f3f4f6; padding:8px; border-radius:4px; font-size:13px">
+                style="background:var(--nt-surface); padding:8px; border-radius:4px; font-size:13px">
                 <strong>你的回答：</strong>{{ a.answerText }}
               </p>
             </el-collapse-item>
@@ -146,10 +147,10 @@
           <el-card v-if="reportData.improvements && reportData.improvements.length" style="flex: 1; min-width: 300px">
             <template #header><strong>📝 改进建议</strong></template>
             <div v-for="(imp, i) in reportData.improvements" :key="i"
-              style="margin-bottom: 12px; padding: 8px; background: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 4px">
+              style="margin-bottom: 12px; padding: 8px; background: var(--nt-tint-yellow); border-left: 3px solid var(--nt-warning); border-radius: 4px">
               <el-tag size="small" type="warning">{{ imp.category }}</el-tag>
               <p style="margin: 6px 0; font-size: 13px"><strong>问题：</strong>{{ imp.issue }}</p>
-              <p style="margin: 0; font-size: 13px; color: #059669"><strong>建议：</strong>{{ imp.suggestion }}</p>
+              <p style="margin: 0; font-size: 13px; color: var(--nt-success)"><strong>建议：</strong>{{ imp.suggestion }}</p>
             </div>
           </el-card>
         </div>
@@ -517,10 +518,10 @@ function startPolling() {
 }
 
 function scoreColor(score) {
-  if (!score) return '#909399'
-  if (score >= 80) return '#67c23a'
-  if (score >= 60) return '#e6a23c'
-  return '#f56c6c'
+  if (!score) return '#c8c4be' // 占位灰（--nt-hairline-strong）
+  if (score >= 80) return '#1aae39' // --nt-success
+  if (score >= 60) return '#dd5b00' // --nt-warning
+  return '#e03131' // --nt-error
 }
 
 // 退出/重新面试统一出口：续答模式回记录列表（重进自动刷新状态），普通模式清表单留 Phase1

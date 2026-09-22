@@ -1,0 +1,121 @@
+/* ==========================================================================
+   Element Plus 换肤：把 --nt-* token 映射为 --el-* 变量 + 少量组件规则
+   依赖 notion-tokens.css 先行；main.js import 序：element-plus → tokens → overrides
+   混色档按 EP mix 公式（light-N 拌白 N/10、dark-2 拌黑 20%）一次性计算，不依赖运行时重算
+   ========================================================================== */
+
+/* ---------- 主色（紫 #5645d4，Notion primary） ---------- */
+:root {
+  --el-color-primary: var(--nt-primary);
+  --el-color-primary-light-3: #897de1;
+  --el-color-primary-light-5: #aba2ea;
+  --el-color-primary-light-7: #ccc7f2;
+  --el-color-primary-light-8: #dddaf6;
+  --el-color-primary-light-9: #eeecfb; /* ≈ Notion lavender */
+  --el-color-primary-dark-2: #4537aa;
+
+  /* ---------- 语义色（success/warning/error，Notion 色板） ---------- */
+  --el-color-success: #1aae39;
+  --el-color-success-light-3: #5fc674;
+  --el-color-success-light-5: #8dd79c;
+  --el-color-success-light-7: #bae7c4;
+  --el-color-success-light-8: #d1efd7;
+  --el-color-success-light-9: #e8f7eb;
+  --el-color-success-dark-2: #158b2e;
+
+  --el-color-warning: #dd5b00;
+  --el-color-warning-light-3: #e78c4d;
+  --el-color-warning-light-5: #eead80;
+  --el-color-warning-light-7: #f5ceb3;
+  --el-color-warning-light-8: #f8decc;
+  --el-color-warning-light-9: #fcefe6;
+  --el-color-warning-dark-2: #b14900;
+
+  --el-color-error: #e03131;
+  --el-color-error-light-3: #e96f6f;
+  --el-color-error-light-5: #f09898;
+  --el-color-error-light-7: #f6c1c1;
+  --el-color-error-light-8: #f9d6d6;
+  --el-color-error-light-9: #fceaea;
+  --el-color-error-dark-2: #b32727;
+
+  /* ---------- info（灰阶 steel，取代 EP 蓝灰） ---------- */
+  --el-color-info: #787671;
+  --el-color-info-light-3: #a19f9c;
+  --el-color-info-light-5: #bcbbb8;
+  --el-color-info-light-7: #d7d6d4;
+  --el-color-info-light-8: #e4e4e3;
+  --el-color-info-light-9: #f2f1f1;
+  --el-color-info-dark-2: #605e5a;
+
+  /* ---------- 文字（charcoal 主文 / slate 常规 / steel 次级 / muted 占位） ---------- */
+  --el-text-color-primary: var(--nt-charcoal);
+  --el-text-color-regular: var(--nt-slate);
+  --el-text-color-secondary: var(--nt-steel);
+  --el-text-color-placeholder: var(--nt-muted);
+  --el-text-color-disabled: var(--nt-hairline-strong);
+
+  /* ---------- 边框 / 填充（hairline 系） ---------- */
+  --el-border-color: var(--nt-hairline);
+  --el-border-color-light: var(--nt-hairline-soft);
+  --el-border-color-lighter: var(--nt-surface); /* 表格行线 */
+  --el-border-color-extra-light: var(--nt-surface-soft);
+  --el-border-color-dark: var(--nt-hairline-strong);
+  --el-border-color-hover: var(--nt-hairline-strong);
+
+  --el-fill-color: var(--nt-hairline-soft);
+  --el-fill-color-light: var(--nt-surface);
+  --el-fill-color-lighter: var(--nt-surface); /* stripe 行底 */
+  --el-fill-color-extra-light: var(--nt-surface-soft);
+  --el-fill-color-dark: var(--nt-hairline);
+  --el-fill-color-blank: transparent;
+
+  /* ---------- 背景 / 遮罩 ---------- */
+  --el-bg-color: var(--nt-canvas);
+  --el-bg-color-page: var(--nt-surface);
+  --el-bg-color-overlay: var(--nt-canvas);
+  --el-mask-color: rgba(15, 15, 15, 0.35);
+
+  /* ---------- 圆角 / 字体 ---------- */
+  --el-border-radius-base: var(--nt-radius-md); /* 按钮/输入/菜单等 */
+  --el-card-border-radius: var(--nt-radius-lg);
+  --el-font-family: var(--nt-font);
+  --el-font-size-base: 14px;
+
+  /* ---------- 表格 ---------- */
+  --el-table-header-bg-color: var(--nt-surface-soft);
+  --el-table-row-hover-bg-color: var(--nt-surface);
+  --el-table-border-color: var(--nt-hairline-soft);
+
+  /* ---------- 输入 focus 环（Notion：focus 2px 主色） ---------- */
+  --el-input-focus-border-color: var(--nt-primary);
+}
+
+/* ---------- 组件级微调 ---------- */
+
+/* 卡片扁平：hairline 细边框 + 零阴影（L0），hover 仅 shadow-1 */
+.el-card {
+  border-color: var(--nt-hairline);
+  box-shadow: var(--nt-shadow-0);
+}
+.el-card.is-hover-shadow:hover {
+  box-shadow: var(--nt-shadow-1);
+}
+
+/* 对话框：12px 圆角 + spec modal 阴影 */
+.el-dialog {
+  border-radius: var(--nt-radius-lg);
+  box-shadow: var(--nt-shadow-modal);
+}
+
+/* tag 回小圆角（Notion 徽章圆角 ≈6px，不随 base 8px 变钝） */
+.el-tag {
+  border-radius: var(--nt-radius-sm);
+}
+
+/* 主按钮：hover/focus 变 pressed 深紫（Notion 交互语义，EP 默认 hover 变浅） */
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):hover,
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):focus {
+  background-color: var(--nt-primary-pressed);
+  border-color: var(--nt-primary-pressed);
+}
