@@ -3,7 +3,17 @@ import vue from '@vitejs/plugin-vue'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    {
+      // Node 的 server.requestTimeout 默认 5 分钟——断点单步挂久了会被它掐断。
+      // 仅影响本地 dev server（vite build 忽略 server/plugin 的这部分），设 0 = 不超时。
+      name: 'dev-disable-request-timeout',
+      configureServer(server) {
+        if (server.httpServer) server.httpServer.requestTimeout = 0
+      }
+    }
+  ],
   server: {
     port: 5173,
     proxy: {

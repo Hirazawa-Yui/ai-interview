@@ -35,8 +35,14 @@ import java.util.Map;
 @Configuration
 public class LlmConfig {
 
-    private static final int CONNECT_TIMEOUT = 10_000;  // 10秒连接超时
-    private static final int READ_TIMEOUT = 60_000;     // 60秒读取超时（AI响应可能较慢）
+    /** 连接超时（毫秒）。可经 app.ai.llm.connect-timeout-ms / 环境变量 LLM_CONNECT_TIMEOUT_MS 覆盖——
+     *  断点单步调试时调大，避免挂起期间被超时打断 */
+    @Value("${app.ai.llm.connect-timeout-ms:10000}")
+    private int connectTimeoutMs;
+
+    /** 读取超时（毫秒，AI 响应可能较慢）。同上可覆盖：LLM_READ_TIMEOUT_MS；设 0 = 不超时 */
+    @Value("${app.ai.llm.read-timeout-ms:60000}")
+    private int readTimeoutMs;
 
     @Value("${app.ai.llm.base-url}")
     private String baseUrl;
@@ -62,8 +68,8 @@ public class LlmConfig {
     public OpenAiApi openAiApi() {
         // 配置超时时间（连接到AI服务可能较慢）
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
-        requestFactory.setReadTimeout(READ_TIMEOUT);
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
 
         RestClient.Builder restClientBuilder = RestClient.builder()
                 .requestFactory(requestFactory);

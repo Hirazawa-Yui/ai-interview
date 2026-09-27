@@ -1,4 +1,4 @@
-import request from './request'
+import request, { UPLOAD_TIMEOUT } from './request'
 
 export const resumeApi = {
   upload(file) {
@@ -6,7 +6,7 @@ export const resumeApi = {
     formData.append('file', file)
     return request.post('/resumes/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 120000
+      timeout: UPLOAD_TIMEOUT // 与其他上传一致，可由 VITE_UPLOAD_TIMEOUT_MS 覆盖（原为写死的 120000）
     }).then(res => res.data)
   },
 

@@ -108,6 +108,10 @@ app:
       model: qwen3.7-flash
       embedding-model: qwen3.7-text-embedding
       embedding-dimensions: 1024
+      # 超时（毫秒），默认即历史值。**断点单步调试**时用环境变量调大即可（backend/.env 里加
+      # LLM_CONNECT_TIMEOUT_MS / LLM_READ_TIMEOUT_MS，或用系统环境变量）；设 0 = 不超时
+      connect-timeout-ms: ${LLM_CONNECT_TIMEOUT_MS:10000}
+      read-timeout-ms: ${LLM_READ_TIMEOUT_MS:60000}
       # 思考模式（T18）：qwen3 系列默认先产出完整 reasoning_content 思维链再作答，
       # 单次调用多花 1~30s；关闭后改写/作答/出题/评估/简历分析全线提速
       # （同请求实测 4.82s → 0.58s）。需要模型"想清楚"时置 true
