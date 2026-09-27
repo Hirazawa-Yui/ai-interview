@@ -47,4 +47,17 @@ public interface IFileChunkService {
      * @return 上传进度（totalChunks + uploadedChunks）
      */
     ChunkUploadResponse preview(String md5);
+
+    /**
+     * 按 OSS Key 删除 file_info 里的秒传登记（T25，知识库文档删除时调用）。
+     * <p>
+     * 不清理会留下死链：OSS 对象已删、登记还在，同一文件再上传时 {@code check()} 会秒传命中一个
+     * 已不存在的 URL，随后 {@code /api/knowledge/upload} 下载该对象失败。
+     * <p>
+     * 维持不变式「file_info 有行 ⇔ 对象存在」。storageKey 为空直接跳过；
+     * 删 0 行是正常情况（该文件不是走分片上传链路的），不报错。
+     *
+     * @param storageKey OSS Key
+     */
+    void deleteByStorageKey(String storageKey);
 }

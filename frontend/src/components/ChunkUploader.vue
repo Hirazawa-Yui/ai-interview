@@ -27,7 +27,6 @@
         <el-descriptions-item label="文件名">{{ uploadState.fileName }}</el-descriptions-item>
         <el-descriptions-item label="文件大小">{{ formatSize(uploadState.fileSize) }}</el-descriptions-item>
         <el-descriptions-item label="MD5">{{ uploadState.md5 }}</el-descriptions-item>
-        <el-descriptions-item label="分片数">{{ uploadState.totalChunks }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 秒传提示 -->
@@ -50,7 +49,7 @@
           striped-flow
         />
         <p style="color: var(--nt-slate); margin-top: 8px; text-align: center">
-          已上传 {{ uploadState.uploadedChunks.length }} / {{ uploadState.totalChunks }} 个分片
+          已完成 {{ uploadPercent }}%
           <template v-if="uploadState.paused">（已暂停）</template>
           <template v-if="uploading">（上传中...）</template>
         </p>

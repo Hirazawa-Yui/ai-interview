@@ -311,6 +311,18 @@ public class FileChunkServiceImpl implements IFileChunkService {
                 .build();
     }
 
+    @Override
+    public void deleteByStorageKey(String storageKey) {
+        if (StrUtil.isBlank(storageKey)) {
+            return; // 没有 OSS Key 的文件不会有对应登记
+        }
+        // 按 storage_key 批量删（该列无唯一索引，selectOne 遇多行会抛异常）；
+        // 用 storage_key 而不是 file_md5：前者就是刚被删掉的那个 OSS 对象的身份，md5 兜底反而可能误删存活 key 的登记
+        int rows = fileInfoMapper.delete(new LambdaQueryWrapper<FileInfo>()
+                .eq(FileInfo::getStorageKey, storageKey));
+        log.info("清理秒传登记: storageKey={}, rows={}", storageKey, rows);
+    }
+
     // ============================================================
     // 孤儿分片清理（D1）
     // ============================================================

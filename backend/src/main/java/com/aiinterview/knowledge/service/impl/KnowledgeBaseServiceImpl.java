@@ -7,6 +7,7 @@ import com.aiinterview.common.BusinessException;
 import com.aiinterview.common.ErrorCode;
 import com.aiinterview.common.TransactionSupport;
 import com.aiinterview.knowledge.mapper.KnowledgeBaseMapper;
+import com.aiinterview.file.service.IFileChunkService;
 import com.aiinterview.file.service.IFileStorageService;
 import com.aiinterview.knowledge.service.IKnowledgeBaseService;
 import com.aiinterview.knowledge.service.IKbVectorService;
@@ -29,6 +30,7 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
     private final IFileStorageService storageService;
     private final VectorizeProducer vectorizeProducer;
     private final IKbVectorService vectorService;
+    private final IFileChunkService chunkService;
 
     @Override
     @Transactional
@@ -130,6 +132,9 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeBaseService {
         kbMapper.deleteById(id);
         // 同步清理 pgvector（同库同事务，与行删除原子提交）
         vectorService.deleteByKbId(id);
+        // 同步清理 file_info 秒传登记（T25，同库同事务）：否则同一文件再上传时会秒传命中一个已删除的 OSS URL。
+        // 这里**不吞异常**（与上面的 OSS 删除不同）：吞掉会让事务提交掉这行必须清掉的脏数据，而这只是一条本地 DELETE。
+        chunkService.deleteByStorageKey(kb.getStorageKey());
         log.info("知识库删除: id={}", id);
     }
 
