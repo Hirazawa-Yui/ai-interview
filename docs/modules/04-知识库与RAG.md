@@ -1,6 +1,6 @@
 # 04-知识库与 RAG
 
-> 模块文档 · 对应代码基线：master · 更新日期：2026-09-07
+> 模块文档 · 对应代码基线：master · 更新日期：2026-09-27
 
 ## 1. 功能概述
 两条链路：
@@ -9,8 +9,8 @@
 
 ## 2. 涉及文件
 后端：
-- `knowledge/controller/KnowledgeBaseController.java` — 7 端点（upload/list/detail/delete/category/revectorize）
-- `knowledge/controller/RagChatController.java` — 7 端点（SSE 单次问答 + 会话 CRUD + **会话重命名 T21** + SSE 多轮）
+- `knowledge/controller/KnowledgeBaseController.java` — 6 端点（upload/list/detail/delete/category/revectorize）
+- `knowledge/controller/RagChatController.java` — 8 端点（SSE 单次问答 + 会话 CRUD + **会话重命名 T21** + **会话换知识库 T23** + SSE 多轮）
 - `knowledge/service/impl/KnowledgeBaseServiceImpl.java` — 入库编排：OSS 下载 → 按后缀分流解析（pdf/doc/docx 走 Tika，其余按 UTF-8 文本）→ MD5 去重 → XADD
 - `knowledge/splitter/OverlapTextSplitter.java` — **自研字符制重叠分块器（T19）**：按句边界切 + 贪心装箱到 `chunk.size` + 相邻块重叠 `chunk.overlap` 字符（对齐句首）
 - `knowledge/service/impl/KbVectorServiceImpl.java` — OverlapTextSplitter 切分 → 删旧向量（JdbcTemplate `DELETE FROM vector_store WHERE metadata->>'kb_id'=?`）→ 每批 ≤10 嵌入入库；相似度检索（filter 表达式 + fallback 本地过滤）
@@ -22,7 +22,7 @@
 - 配置：`application.yml` 的 `app.ai.rag.*`（**chunk.size 500 / chunk.overlap 80**、rewrite 开关、max-history-chars 200、长短查询阈值、topK 20/12/8、minScore 0.18/0.28）
 - `common/StageWatch.java`（T17）— 请求级分段计时器，被上述两个 Impl 用于打单行耗时日志
 
-前端：`pages/KnowledgePage.vue`（4 Tab：上传/列表/RAG问答/历史会话）、`api/knowledge.js`（RAG/会话接口在页面内裸 fetch，未收敛）
+前端：`pages/KnowledgePage.vue`（4 Tab：上传/列表/RAG问答/历史会话）、`api/rag-chat.js`（会话 CRUD + SSE `streamChat`；T8 起从页面收敛过来）、`utils/sse.js`（SSE 按事件解析，T20）
 
 ## 3. 核心流程
 ```
@@ -79,7 +79,7 @@
 - ~~上传事务内 XADD 竞态~~：✅ 已修（T15，2026-09-08）——`upload()` 向量化任务发送改 `TransactionSupport.afterCommit`（同 modules/03 简历与 docs/00 坑 #8）。
 - 会话历史消息 `LIMIT 11` 取 11 条过滤当前 user 消息后取 10 条——对消息数边界敏感，改动需小心。
 - ~~**RAG 慢的主因不是检索，是模型在"思考"**~~：✅ 已修（T18，2026-09-22）——`qwen3.7-flash` 默认走思考模式（每次调用先产出完整 `reasoning_content` 思维链），T17 埋点实测：总 32.0s/47.7s 里 rewrite 10.1s/19.2s、llm首字 19.5s/23.3s，而 embedding+检索只有 0.2–0.6s。修复 = `LlmConfig` 注入 `extraBody(enable_thinking=false)`，开关 `app.ai.llm.enable-thinking`（默认 false）。**修复后同一问题 7.8s / 5.8s（4–8 倍）**：rewrite 0.46s/0.67s、llm首字 2.4s/0.59s，答案反而更完整（响应体 1125B → 2122B）。属跨模块修复（出题/评估/简历分析走同一 ChatClient 一并受益，出题冒烟 6.0s/5 题正常），详见 docs/00 坑位 #10。
-- **（T18/T19 后的新瓶颈，T20 靶子）**：`生成` 是绝对大头且**波动大**——同一问题（缓存穿透，topK 12）连跑三次：答案 4570/2861/2920 字节，生成 8461/5026/4455 ms，**约 1.7–1.85 ms / 输出字节**。次之 `流首字` 0.8s（120 字探测窗口的攒字等待，降到 60 字可省一半）> `llm首字` 0.4–1.0s > `search` 0.2s。另：同一答案被切成 **100+ 个 SSE 分片**，前端每片都全量重解析 markdown（`[RAG前端] 重渲染=` 待浏览器实测）。
+- **（T18/T19 后的新瓶颈，仍未优化）**：`生成` 是绝对大头且**波动大**——同一问题（缓存穿透，topK 12）连跑三次：答案 4570/2861/2920 字节，生成 8461/5026/4455 ms，**约 1.7–1.85 ms / 输出字节**。次之 `流首字` 0.8s（120 字探测窗口的攒字等待，**降到 60 字可省一半 —— 未做**）> `llm首字` 0.4–1.0s > `search` 0.2s。另：同一答案被切成 **100+ 个 SSE 分片**，前端已按 80ms 节流重解析（T20 已修），可用 `[RAG前端] 重渲染=` 对比验证。
   - **结论：调分块/检索只能改善"上下文瘦身 + 首字"，改不动总时长**——总时长由答案长度决定，属于模型侧。
 - **（T19 实测，2026-09-22）分块改造的效果边界**：kb5 按 500/80 重建后，`ctxChars` 11283 → 5793（−49%）、`llm首字` 2442ms → 495ms，但端到端总时长被"生成"波动淹没（6.3–7.1s vs 旧的单样本 7.8s）。**分块的收益是检索精度与上下文体积，不要拿它当提速手段讲。**
 - **（T17 附带发现）`topK` 按"改写后"长度选取**（`KbQueryServiceImpl:75` 用的是 `rewritten`），把"≤4 字 → topK 20"的设计意图架空了：实测 `缓存穿透`(4 字) 被改写为 44 字后落到 topK 8，与"短查询多取候选"的初衷相反。
